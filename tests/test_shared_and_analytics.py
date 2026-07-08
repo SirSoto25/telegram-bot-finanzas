@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from finance_analytics import _build_anomalies, _format_panel_text
 from finance_notifications import _check_budget_warning, check_alerts
+import finance_reports
 from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
 from handlers_registry import register_handlers
 from finance_state import get_accounts, get_or_create_user
@@ -117,6 +118,9 @@ class _Reply:
     async def reply_text(self, text, parse_mode=None):
         self.messages.append((text, parse_mode))
 
+    async def reply_document(self, document):
+        self.messages.append(("document", getattr(document, "name", None)))
+
 
 class _NotifUpdate:
     def __init__(self):
@@ -217,6 +221,30 @@ class AnalyticsTests(unittest.TestCase):
         self.assertTrue(alerts and "ALERTA" in alerts[0])
         update = _NotifUpdate()
         asyncio.run(_check_budget_warning(_NotifDB(), 1, "Comida", update))
+        self.assertTrue(update.message.messages)
+
+
+class ReportHandlersTests(unittest.TestCase):
+    def test_suggest_category_handler_uses_shared_rules(self):
+        class _Message:
+            def __init__(self, text):
+                self.text = text
+                self.messages = []
+
+            async def reply_text(self, text, parse_mode=None):
+                self.messages.append((text, parse_mode))
+
+            async def reply_document(self, document):
+                self.messages.append(("document", getattr(document, "name", None)))
+
+        class _Update:
+            def __init__(self, text):
+                self.message = _Message(text)
+                self.effective_user = type("U", (), {"id": 1})()
+                self.effective_chat = type("C", (), {"id": 1})()
+
+        update = _Update("/sugerircategoria supermercado mercadona")
+        asyncio.run(finance_reports.cmd_sugerircategoria(update, None))
         self.assertTrue(update.message.messages)
 
 

@@ -1,4 +1,9 @@
 import asyncio
+import logging
+import os
+import sqlite3
+import sys
+from pathlib import Path
 
 try:
     from supabase import create_client
@@ -439,3 +444,217 @@ class SupabaseDB:
 
     async def executescript(self, _script):
         return None
+
+
+LEGACY_SQLITE_PATH = Path("/home/sirsoto25/bot/finance.db")
+logger = logging.getLogger(__name__)
+
+
+async def _tx_wrap(db, ops):
+    await db.execute("BEGIN")
+    try:
+        for sql, params in ops:
+            await db.execute(sql, params)
+        await db.commit()
+    except Exception:
+        await db.execute("ROLLBACK")
+        raise
+
+
+async def migrate_legacy_sqlite(db):
+    if not LEGACY_SQLITE_PATH.exists():
+        return
+    existing = await db._select_rows("users", columns="id", limit=1)
+    if existing:
+        return
+
+    logger.info("Migrando datos desde SQLite legacy a Supabase...")
+    conn = sqlite3.connect(str(LEGACY_SQLITE_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        def legacy_rows(query):
+            try:
+                return [dict(r) for r in conn.execute(query).fetchall()]
+            except sqlite3.OperationalError:
+                return []
+
+        user_map, account_map = {}, {}
+
+        users = legacy_rows("SELECT * FROM users ORDER BY id")
+        for u in users:
+            payload = {"telegram_id": u["telegram_id"]}
+            if u.get("created_at"):
+                payload["created_at"] = u["created_at"]
+            row = await db._upsert_row("users", payload, on_conflict="telegram_id")
+            user_map[u["id"]] = row["id"]
+
+        accounts = legacy_rows("SELECT * FROM accounts ORDER BY id")
+        for a in accounts:
+            payload = {
+                "user_id": user_map.get(a["user_id"]),
+                "name": a["name"],
+                "type": a["type"],
+                "balance": a["balance"],
+                "created_at": a.get("created_at"),
+            }
+            if payload["user_id"] is None:
+                continue
+            row = await db._upsert_row("accounts", payload, on_conflict="user_id,name")
+            account_map[a["id"]] = row["id"]
+
+        tx_payloads = []
+        for t in legacy_rows("SELECT * FROM transactions ORDER BY id"):
+            uid = user_map.get(t["user_id"])
+            aid = account_map.get(t["account_id"])
+            lid = account_map.get(t["linked_account_id"]) if t.get("linked_account_id") is not None else None
+            if uid is None or aid is None:
+                continue
+            tx_payloads.append({
+                "user_id": uid,
+                "account_id": aid,
+                "amount": t["amount"],
+                "type": t["type"],
+                "category": t["category"],
+                "description": t.get("description") or "",
+                "linked_account_id": lid,
+                "date": t.get("date"),
+            })
+        if tx_payloads:
+            await db._insert_rows("transactions", tx_payloads)
+
+        rec_payloads = []
+        rec_rows = legacy_rows("SELECT * FROM recurring_expenses ORDER BY id")
+        for r in rec_rows:
+            uid = user_map.get(r["user_id"])
+            aid = account_map.get(r["account_id"])
+            if uid is None or aid is None:
+                continue
+            rec_payloads.append({
+                "user_id": uid,
+                "name": r["name"],
+                "amount": r["amount"],
+                "frequency": r["frequency"],
+                "next_date": r["next_date"],
+                "category": r["category"],
+                "account_id": aid,
+                "created_at": r.get("created_at"),
+                "type": r.get("type") or "GASTO",
+            })
+        if rec_payloads:
+            await db._insert_rows("recurring_expenses", rec_payloads)
+
+        sessions = legacy_rows("SELECT * FROM session_states")
+        for s in sessions:
+            await db._upsert_row(
+                "session_states",
+                {
+                    "telegram_id": s["telegram_id"],
+                    "state": s.get("state"),
+                    "data": s.get("data"),
+                    "created_at": s.get("created_at"),
+                },
+                on_conflict="telegram_id"
+            )
+
+        alerts = legacy_rows("SELECT * FROM low_balance_alerts ORDER BY id")
+        for a in alerts:
+            aid = account_map.get(a["account_id"])
+            if aid is None:
+                continue
+            await db._upsert_row(
+                "low_balance_alerts",
+                {
+                    "telegram_id": a["telegram_id"],
+                    "account_id": aid,
+                    "threshold": a["threshold"],
+                    "enabled": bool(a.get("enabled", 1)),
+                },
+                on_conflict="telegram_id,account_id"
+            )
+
+        roundup_rows = legacy_rows("SELECT * FROM roundup_config")
+        for r in roundup_rows:
+            uid = user_map.get(r["user_id"])
+            aid = account_map.get(r["account_id"]) if r.get("account_id") is not None else None
+            if uid is None:
+                continue
+            await db._upsert_row(
+                "roundup_config",
+                {"user_id": uid, "enabled": bool(r.get("enabled", 0)), "account_id": aid},
+                on_conflict="user_id"
+            )
+
+        budgets = legacy_rows("SELECT * FROM budgets ORDER BY id")
+        for b in budgets:
+            uid = user_map.get(b["user_id"])
+            if uid is None:
+                continue
+            await db._upsert_row(
+                "budgets",
+                {"user_id": uid, "category": b["category"], "amount": b["amount"], "month": b["month"]},
+                on_conflict="user_id,category,month"
+            )
+
+        goals_payloads = []
+        goals = legacy_rows("SELECT * FROM savings_goals ORDER BY id")
+        for g in goals:
+            uid = user_map.get(g["user_id"])
+            if uid is None:
+                continue
+            goals_payloads.append({
+                "user_id": uid,
+                "name": g["name"],
+                "target_amount": g["target_amount"],
+                "current_amount": g.get("current_amount", 0),
+                "deadline": g.get("deadline"),
+                "created_at": g.get("created_at"),
+            })
+        if goals_payloads:
+            await db._insert_rows("savings_goals", goals_payloads)
+    finally:
+        conn.close()
+
+    logger.info("Migracion SQLite -> Supabase completada.")
+
+
+_app_db = None
+
+
+async def init_db(supabase_url=None, supabase_key=None):
+    if not supabase_url:
+        supabase_url = os.environ.get("SUPABASE_URL", "")
+    if not supabase_key:
+        supabase_key = os.environ.get("SUPABASE_KEY", "")
+    if create_client is None:
+        detail = (
+            f"{type(_SUPABASE_IMPORT_ERROR).__name__}: {_SUPABASE_IMPORT_ERROR}"
+            if _SUPABASE_IMPORT_ERROR is not None
+            else "modulo no encontrado"
+        )
+        py_mm = f"{sys.version_info.major}.{sys.version_info.minor}"
+        raise RuntimeError(
+            "No se pudo importar 'supabase'. "
+            f"Detalle: {detail}. "
+            f"Python actual: {sys.executable}. "
+            f"Instala en ese mismo entorno con: python{py_mm} -m pip install --user --upgrade supabase"
+        )
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Configura SUPABASE_URL y SUPABASE_KEY en variables de entorno.")
+
+    db = SupabaseDB(supabase_url, supabase_key)
+    try:
+        await db._select_rows("users", columns="id", limit=1)
+    except Exception as err:
+        raise RuntimeError(
+            "No se pudo acceder a la tabla 'users' en Supabase. "
+            "Crea el esquema en Supabase antes de iniciar el bot."
+        ) from err
+    await migrate_legacy_sqlite(db)
+    return db
+
+
+async def get_db(supabase_url=None, supabase_key=None):
+    global _app_db
+    if _app_db is None:
+        _app_db = await init_db(supabase_url, supabase_key)
+    return _app_db

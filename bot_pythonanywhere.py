@@ -45,7 +45,8 @@ from finance_shared import (
     h,
     parse_amount,
 )
-from finance_db import DBIntegrityError as FinanceDBIntegrityError, SupabaseDB as FinanceSupabaseDB
+from finance_db import _tx_wrap, get_db as finance_get_db, init_db as finance_init_db
+import finance_reports
 from handlers_registry import register_handlers
 from finance_state import (
     _check_session_expiry,
@@ -717,39 +718,10 @@ async def migrate_legacy_sqlite(db):
 
 
 async def init_db():
-    if create_client is None:
-        detail = (
-            f"{type(_SUPABASE_IMPORT_ERROR).__name__}: {_SUPABASE_IMPORT_ERROR}"
-            if _SUPABASE_IMPORT_ERROR is not None
-            else "modulo no encontrado"
-        )
-        py_mm = f"{sys.version_info.major}.{sys.version_info.minor}"
-        raise RuntimeError(
-            "No se pudo importar 'supabase'. "
-            f"Detalle: {detail}. "
-            f"Python actual: {sys.executable}. "
-            f"Instala en ese mismo entorno con: python{py_mm} -m pip install --user --upgrade supabase"
-        )
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise RuntimeError("Configura SUPABASE_URL y SUPABASE_KEY en variables de entorno.")
+    return await finance_init_db(SUPABASE_URL, SUPABASE_KEY)
 
-    db = FinanceSupabaseDB(SUPABASE_URL, SUPABASE_KEY)
-    # Verifica conectividad/esquema base
-    try:
-        await db._select_rows("users", columns="id", limit=1)
-    except Exception as err:
-        raise RuntimeError(
-            "No se pudo acceder a la tabla 'users' en Supabase. "
-            "Crea el esquema en Supabase antes de iniciar el bot."
-        ) from err
-    await migrate_legacy_sqlite(db)
-    return db
-
-_app_db = None
 async def get_db():
-    global _app_db
-    if _app_db is None: _app_db = await init_db()
-    return _app_db
+    return await finance_get_db(SUPABASE_URL, SUPABASE_KEY)
 
 # ── COMMAND HANDLERS ──────────────────────────────────────────────────
 
@@ -873,8 +845,8 @@ async def handle_menu_callback(update,ctx):
     d=q.data.replace("menu_","")
     cmd_map={
         "gasto":cmd_gasto,"ingreso":cmd_ingreso,"traspaso":cmd_traspaso,"deshacer":cmd_deshacer,
-        "resumen":cmd_resumen,"stats":cmd_stats,"recurrente":cmd_recurrente,"alertas":cmd_alertas,
-        "cuentas":cmd_cuentas,"redondeo":cmd_redondeo,"exportar":cmd_exportar,"help":cmd_help,
+        "resumen":finance_reports.cmd_resumen,"stats":finance_reports.cmd_stats,"recurrente":cmd_recurrente,"alertas":cmd_alertas,
+        "cuentas":cmd_cuentas,"redondeo":cmd_redondeo,"exportar":finance_reports.cmd_exportar,"help":cmd_help,
     }
     handler=cmd_map.get(d)
     if handler:
@@ -1941,15 +1913,15 @@ async def _create_ptb_app():
             "cmd_recurrente": cmd_recurrente,
             "cmd_agregar_recurrente": cmd_agregar_recurrente,
             "cmd_borrar_recurrente": cmd_borrar_recurrente,
-            "cmd_resumen": cmd_resumen,
-            "cmd_stats": cmd_stats,
-            "cmd_tendencia": cmd_tendencia,
-            "cmd_panel": cmd_panel,
-            "cmd_forecast": cmd_forecast,
-            "cmd_anomalias": cmd_anomalias,
-            "cmd_tags": cmd_tags,
-            "cmd_sugerircategoria": cmd_sugerircategoria,
-            "cmd_exportar": cmd_exportar,
+            "cmd_resumen": finance_reports.cmd_resumen,
+            "cmd_stats": finance_reports.cmd_stats,
+            "cmd_tendencia": finance_reports.cmd_tendencia,
+            "cmd_panel": finance_reports.cmd_panel,
+            "cmd_forecast": finance_reports.cmd_forecast,
+            "cmd_anomalias": finance_reports.cmd_anomalias,
+            "cmd_tags": finance_reports.cmd_tags,
+            "cmd_sugerircategoria": finance_reports.cmd_sugerircategoria,
+            "cmd_exportar": finance_reports.cmd_exportar,
             "cmd_alertas": cmd_alertas,
             "cmd_agregar_alerta": cmd_agregar_alerta,
             "cmd_borrar_alerta": cmd_borrar_alerta,
