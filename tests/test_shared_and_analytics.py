@@ -6,6 +6,7 @@ from finance_analytics import _build_anomalies, _format_panel_text
 from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
 from handlers_registry import register_handlers
 from finance_state import get_accounts, get_or_create_user
+from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 
 
 class _FakeCursor:
@@ -160,6 +161,16 @@ class AnalyticsTests(unittest.TestCase):
         db = _StateDB()
         self.assertEqual(asyncio.run(get_or_create_user(db, 9)), 42)
         self.assertEqual(asyncio.run(get_accounts(db, 9))[0]["name"], "Caja")
+
+    def test_keyboard_builders(self):
+        kb = _kb([("A", "a"), ("B", "b")])
+        self.assertEqual(len(kb.inline_keyboard), 2)
+        ack = _acct_kb([{"name": "Caja", "balance": 12.3, "id": 7}], "exp_acc")
+        self.assertEqual(len(ack.inline_keyboard), 1)
+        mkb = multi_kb([("Uno", "1"), ("Dos", "2")], "type")
+        self.assertEqual(len(mkb.inline_keyboard), 2)
+        ckb = _confirm_kb("ok", "ignored")
+        self.assertEqual(len(ckb.inline_keyboard), 2)
 
 
 if __name__ == "__main__":
