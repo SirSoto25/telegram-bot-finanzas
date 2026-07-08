@@ -75,6 +75,12 @@ def _cb_suffix_int(data, prefix):
     suffix = data[len(prefix):]
     return int(suffix) if suffix.isdigit() else None
 
+def _cb_suffix_text(data, prefix):
+    if not data.startswith(prefix):
+        return None
+    suffix = data[len(prefix):]
+    return suffix if suffix else None
+
 
 async def _ptb_error_handler(update, context):
     logger.exception("Unhandled PTB exception", exc_info=context.error)
@@ -1315,7 +1321,7 @@ async def handle_budget_callback(update,ctx):
     sdata=json.loads(s["data"]) if s["data"] else {}; d=q.data; state=s["state"]
 
     if state=="waiting_budget_category" and d.startswith("budcat_"):
-        key=d.split("_")[1]
+        key = _cb_suffix_text(d, "budcat_")
         if key not in CATEGORY_MAP: return await q.edit_message_text("Opcion invalida.")
         sdata["budgetCategory"]=key
         await save_session(db,tid,"waiting_budget_amount",sdata)
@@ -1456,7 +1462,9 @@ async def handle_callback(update,ctx):
     if d=="cancel_action": await clear_session(db,tid); return await q.edit_message_text("✅ Operacion cancelada.")
 
     if d.startswith("aportar_goal_"):
-        gid=int(d.split("_")[2])
+        gid = _cb_suffix_int(d, "aportar_goal_")
+        if gid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
         goal=await (await db.execute("SELECT name FROM savings_goals WHERE id=? AND user_id=?",(gid,uid))).fetchone()
         if not goal: return await q.edit_message_text("Meta no encontrada.")
         await save_session(db,tid,"waiting_aportar_amount",{"goalId":gid})
@@ -1491,7 +1499,10 @@ async def handle_callback(update,ctx):
             reply_markup=_confirm_kb(f"del_account_confirm_{aid}", d), parse_mode=ParseMode.HTML)
 
     elif d.startswith("xfer_from_"):
-        fid=int(d.split("_")[2]); accts=await get_accounts(db,uid)
+        fid = _cb_suffix_int(d, "xfer_from_")
+        if fid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+        accts=await get_accounts(db,uid)
         to=[a for a in accts if a["id"]!=fid]
         if not to: return await q.edit_message_text("No hay otra cuenta de destino disponible.")
         await save_session(db,tid,"waiting_transfer_to",{"from_id":fid})
@@ -1500,7 +1511,10 @@ async def handle_callback(update,ctx):
         await q.edit_message_text(f"Origen: <b>{h(src['name'])}</b> (€{h(bal_val)})\n\nSelecciona la cuenta de DESTINO:", reply_markup=_acct_kb(to,"xfer_to",None), parse_mode=ParseMode.HTML)
 
     elif d.startswith("xfer_to_"):
-        toid=int(d.split("_")[2]); s=await get_session(db,tid)
+        toid = _cb_suffix_int(d, "xfer_to_")
+        if toid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+        s=await get_session(db,tid)
         sdata=json.loads(s["data"]) if s else {}; fid=sdata.get("from_id")
         await save_session(db,tid,"waiting_transfer_amount",{"from_id":fid,"to_id":toid})
         sa=await (await db.execute("SELECT name FROM accounts WHERE id=?",(fid,))).fetchone()
@@ -1525,7 +1539,9 @@ async def handle_callback(update,ctx):
             reply_markup=_confirm_kb(f"del_recurring_confirm_{rid}", d), parse_mode=ParseMode.HTML)
 
     elif d.startswith("alert_acc_"):
-        aid=int(d.split("_")[2])
+        aid = _cb_suffix_int(d, "alert_acc_")
+        if aid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
         await save_session(db,tid,"waiting_alert_threshold",{"account_id":aid})
         await q.edit_message_text("¿A partir de que cantidad quieres que se active la alerta?\n(Formato: cantidad en €)\n\nEjemplo: 500 (alerta cuando el saldo sea menor a €500)")
 
@@ -1545,7 +1561,9 @@ async def handle_callback(update,ctx):
             reply_markup=_confirm_kb(f"del_alert_confirm_{aid}", d), parse_mode=ParseMode.HTML)
 
     elif d.startswith("roundup_acc_"):
-        accid=int(d.split("_")[2])
+        accid = _cb_suffix_int(d, "roundup_acc_")
+        if accid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
         rup=await get_roundup(db,uid)
         if rup: await db.execute("UPDATE roundup_config SET account_id=? WHERE user_id=?",(accid,uid))
         else: await db.execute("INSERT INTO roundup_config(user_id,enabled,account_id) VALUES(?,0,?)",(uid,accid))
@@ -1565,7 +1583,9 @@ async def handle_callback(update,ctx):
 
     # ── Undo transaction ──
     elif d.startswith("undo_"):
-        txid=int(d.split("_")[1])
+        txid = _cb_suffix_int(d, "undo_")
+        if txid is None:
+            return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
         tx=await (await db.execute("SELECT * FROM transactions WHERE id=? AND user_id=?",(txid,uid))).fetchone()
         if not tx: return await q.edit_message_text("Movimiento no encontrado o ya deshecho.")
         ttype=tx["type"]; amt=tx["amount"]
@@ -1600,14 +1620,14 @@ async def handle_callback(update,ctx):
 # ── FLOW CALLBACK HANDLERS (dispatch) ───────────────────────────────
 
 async def _hfc_acct_type(db,tid,uid,sdata,d,q,update,ctx):
-    key=d.split("_")[1]
+    key = _cb_suffix_text(d, "type_")
     if key not in ACCOUNT_TYPE_MAP: return await q.edit_message_text("Opcion invalida.")
     sdata["accountType"]=ACCOUNT_TYPE_MAP[key]
     await save_session(db,tid,"waiting_account_balance",sdata)
     await q.edit_message_text("¿Cual es el saldo inicial?\n(Formato: cantidad)\n\nEjemplo: 2500\n\n/cancel para cancelar")
 
 async def _hfc_expense_cat(db,tid,uid,sdata,d,q,update,ctx):
-    key=d.split("_")[1]
+    key = _cb_suffix_text(d, "cat_")
     if key not in CATEGORY_MAP: return await q.edit_message_text("Opcion invalida.")
     sdata["expenseCategory"]=CATEGORY_MAP[key]
     await save_session(db,tid,"waiting_expense_date",sdata)
@@ -1621,7 +1641,7 @@ async def _hfc_expense_cat(db,tid,uid,sdata,d,q,update,ctx):
         ]))
 
 async def _hfc_expense_date(db,tid,uid,sdata,d,q,update,ctx):
-    sub=d.split("_")[1]
+    sub = _cb_suffix_text(d, "expdate_")
     if sub=="hoy": sdata["expenseDate"]=datetime.now().isoformat()
     elif sub=="ayer": sdata["expenseDate"]=(datetime.now()-timedelta(days=1)).isoformat()
     elif sub=="custom":
@@ -1630,9 +1650,11 @@ async def _hfc_expense_date(db,tid,uid,sdata,d,q,update,ctx):
     await _expense_ask_account(db,tid,uid,sdata,q)
 
 async def _hfc_expense_acc(db,tid,uid,sdata,d,q,update,ctx):
-    parts=d.split("_")
-    if len(parts)<3 or not parts[2].isdigit(): return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
-    aid=int(parts[2]); amt=sdata.get("expenseAmount",0); cat=sdata.get("expenseCategory","")
+    aid = _cb_suffix_int(d, "exp_acc_")
+    if aid is None: return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+    amt=sdata.get("expenseAmount",0); cat=sdata.get("expenseCategory","")
+    if amt <= 0:
+        return await q.edit_message_text("❌ Cantidad invalida. Inicia de nuevo con /gasto.")
     acc=await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
     if not acc: return await q.edit_message_text("Cuenta no encontrada.")
     if acc["balance"]<amt: return await q.edit_message_text("❌ Saldo insuficiente en esta cuenta.")
@@ -1656,9 +1678,11 @@ async def _hfc_expense_acc(db,tid,uid,sdata,d,q,update,ctx):
     await _check_budget_warning(db,uid,cat,update)
 
 async def _hfc_income_acc(db,tid,uid,sdata,d,q,update,ctx):
-    parts=d.split("_")
-    if len(parts)<3 or not parts[2].isdigit(): return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
-    aid=int(parts[2]); amt=sdata.get("incomeAmount",0); conc=sdata.get("incomeConcept","")
+    aid = _cb_suffix_int(d, "inc_acc_")
+    if aid is None: return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+    amt=sdata.get("incomeAmount",0); conc=sdata.get("incomeConcept","")
+    if amt <= 0:
+        return await q.edit_message_text("❌ Cantidad invalida. Inicia de nuevo con /ingreso.")
     await _tx_wrap(db,[("INSERT INTO transactions(user_id,account_id,amount,type,category) VALUES(?,?,?,'INGRESO',?)",(uid,aid,amt,conc)),
                         ("UPDATE accounts SET balance=balance+? WHERE id=?",(amt,aid))])
     acc=await (await db.execute("SELECT name FROM accounts WHERE id=?",(aid,))).fetchone()
@@ -1666,7 +1690,7 @@ async def _hfc_income_acc(db,tid,uid,sdata,d,q,update,ctx):
     await q.edit_message_text(f"✅ Ingreso registrado\n💰 €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}")
 
 async def _hfc_rec_freq(db,tid,uid,sdata,d,q,update,ctx):
-    key=d.split("_")[1]
+    key = _cb_suffix_text(d, "freq_")
     if key not in FREQ_MAP: return await q.edit_message_text("Opcion invalida.")
     sdata["recurringFrequency"]=FREQ_MAP[key]; await save_session(db,tid,"waiting_recurring_category",sdata)
     rec_amt="{:.2f}".format(sdata.get('recurringAmount',0))
@@ -1674,7 +1698,7 @@ async def _hfc_rec_freq(db,tid,uid,sdata,d,q,update,ctx):
         reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"rrcat",cols=2,extra=None))
 
 async def _hfc_rec_cat(db,tid,uid,sdata,d,q,update,ctx):
-    key=d.split("_")[1]
+    key = _cb_suffix_text(d, "rrcat_")
     if key not in CATEGORY_MAP: return await q.edit_message_text("Opcion invalida.")
     sdata["recurringCategory"]=CATEGORY_MAP[key]; accts=await get_accounts(db,uid)
     await save_session(db,tid,"waiting_recurring_account",sdata)
@@ -1683,9 +1707,10 @@ async def _hfc_rec_cat(db,tid,uid,sdata,d,q,update,ctx):
         reply_markup=_acct_kb(accts,"rec_acc",None))
 
 async def _hfc_rec_acc(db,tid,uid,sdata,d,q,update,ctx):
-    parts=d.split("_")
-    if len(parts)<3 or not parts[2].isdigit(): return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
-    aid=int(parts[2])
+    aid = _cb_suffix_int(d, "rec_acc_")
+    if aid is None: return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+    if sdata.get("recurringAmount", 0) <= 0:
+        return await q.edit_message_text("❌ Cantidad invalida. Inicia de nuevo con /agregarrecurrente.")
     await db.execute("INSERT INTO recurring_expenses(user_id,name,amount,frequency,next_date,category,account_id) VALUES(?,?,?,?,?,?,?)",
                      (uid,sdata["recurringName"],sdata["recurringAmount"],sdata["recurringFrequency"],datetime.now().isoformat(),sdata["recurringCategory"],aid))
     await db.commit(); await clear_session(db,tid)
@@ -1737,6 +1762,7 @@ async def _ht_acct_balance(db,tid,uid,text,sdata,update,ctx):
 async def _ht_expense_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["expenseAmount"]=amt
     await save_session(db,tid,"waiting_expense_category",sdata)
     await update.message.reply_text(f"Gasto: €{h(f'{amt:.2f}')}\n\nSelecciona la categoria:", reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"cat",cols=2,extra=None))
@@ -1751,6 +1777,7 @@ async def _ht_expense_date_custom(db,tid,uid,text,sdata,update,ctx):
 async def _ht_income_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["incomeAmount"]=amt; await save_session(db,tid,"waiting_income_concept",sdata)
     await update.message.reply_text(f"Ingreso: €{h(f'{amt:.2f}')}\n\n¿Cual es el concepto?\n(Ejemplo: Freelance, Regalo, Bonificacion)\n\n/cancel para cancelar")
 
@@ -1785,12 +1812,14 @@ async def _ht_recurring_name(db,tid,uid,text,sdata,update,ctx):
 async def _ht_recurring_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.message.reply_text("Cantidad invalida.")
+    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
     sdata["recurringAmount"]=amt; await save_session(db,tid,"waiting_recurring_frequency",sdata)
     await update.message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None))
 
 async def _ht_alert_threshold(db,tid,uid,text,sdata,update,ctx):
     th=parse_amount(text)
     if th is None: return await update.message.reply_text("Cantidad invalida.")
+    if th <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
     await db.execute("INSERT OR REPLACE INTO low_balance_alerts(telegram_id,account_id,threshold,enabled) VALUES(?,?,?,1)",(tid,sdata["account_id"],th))
     await db.commit(); await clear_session(db,tid)
     await update.message.reply_text(f"✅ Alerta configurada\n🔔 Se te notificara cuando el saldo sea menor a €{h(f'{th:.2f}')}", parse_mode=ParseMode.HTML)
