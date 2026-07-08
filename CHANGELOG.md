@@ -11,9 +11,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Global PTB error handler for uncaught update exceptions.
 - Safe callback parsing helpers.
 - Full flow for `/agregaringresorecurrente`.
+- Optional notes and tags for expenses and income movements.
+- Panel financiero con forecast, anomalías y etiquetas.
+- Comandos `/panel`, `/forecast`, `/anomalias`, `/tags`, `/sugerircategoria`.
 - Base project documentation (README, runbook, security, command/state reference, ADR).
 
 ### Changed
 - Stricter positive amount validation in monetary flows.
 - PTB app initialization protected with `asyncio.Lock`.
-

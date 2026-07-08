@@ -9,6 +9,8 @@ Bot de finanzas personales para Telegram con backend en **Flask + python-telegra
 - Gastos recurrentes e ingresos recurrentes
 - Presupuestos y metas de ahorro
 - Alertas de saldo bajo
+- Panel semanal, forecast y detección de anomalías
+- Etiquetas con `#hashtag` y sugerencias de categoría
 - Exportación CSV y estadísticas básicas
 
 ## Requisitos
@@ -64,6 +66,7 @@ Puntos importantes:
 - `/presupuesto`, `/presupuestoset`
 - `/metas`, `/nuevameta`, `/aportarmeta`
 - `/alertas`, `/agregaralerta`, `/borraralerta`
+- `/panel`, `/forecast`, `/anomalias`, `/tags`, `/sugerircategoria`
 - `/exportar`
 
 ## Documentación adicional
@@ -72,4 +75,3 @@ Puntos importantes:
 - `docs/REFERENCE_COMMANDS_AND_STATES.md`
 - `docs/SECURITY.md`
 - `docs/adr/0001-architecture-flask-ptb-supabase.md`
-

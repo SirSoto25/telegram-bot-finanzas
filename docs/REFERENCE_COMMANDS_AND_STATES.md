@@ -20,6 +20,11 @@
 | `/nuevameta` | Alta de meta |
 | `/aportarmeta` | Aporte a meta |
 | `/alertas` | Gestión de alertas |
+| `/panel` | Panel financiero semanal |
+| `/forecast` | Proyección de fin de mes |
+| `/anomalias` | Detección de anomalías de gasto |
+| `/tags` | Etiquetas detectadas desde notas |
+| `/sugerircategoria` | Sugerencia de categoría por texto |
 | `/exportar` | Exportación de datos |
 
 ## Estados conversacionales (selección)
@@ -29,11 +34,13 @@
 | `waiting_account_name` | `_ht_acct_name` |
 | `waiting_account_balance` | `_ht_acct_balance` |
 | `waiting_expense_amount` | `_ht_expense_amount` |
+| `waiting_expense_note` | `_ht_expense_note` |
 | `waiting_expense_category` | `_hfc_expense_cat` |
 | `waiting_expense_date` | `_hfc_expense_date` |
 | `waiting_expense_account` | `_hfc_expense_acc` |
 | `waiting_income_amount` | `_ht_income_amount` |
 | `waiting_income_concept` | `_ht_income_concept` |
+| `waiting_income_note` | `_ht_income_note` |
 | `waiting_income_account` | `_hfc_income_acc` |
 | `waiting_transfer_amount` | `_ht_transfer_amount` |
 | `waiting_recurring_name` | `_ht_recurring_name` |
@@ -49,4 +56,3 @@
 | `waiting_goal_name` | `_ht_goal_name` |
 | `waiting_goal_target` | `_ht_goal_target` |
 | `waiting_goal_deadline` | `_ht_goal_deadline` |
-
