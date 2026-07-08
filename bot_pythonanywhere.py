@@ -44,10 +44,20 @@ from finance_shared import (
     _smart_category_suggestion,
     h,
     parse_amount,
-    session_is_expired,
 )
 from finance_db import DBIntegrityError as FinanceDBIntegrityError, SupabaseDB as FinanceSupabaseDB
 from handlers_registry import register_handlers
+from finance_state import (
+    _check_session_expiry,
+    clear_session,
+    get_accounts,
+    get_or_create_user,
+    get_roundup,
+    get_session,
+    get_system_state,
+    save_session,
+    save_system_state,
+)
 
 try:
     from supabase import create_client
@@ -787,42 +797,6 @@ async def get_db():
     if _app_db is None: _app_db = await init_db()
     return _app_db
 
-async def get_or_create_user(db, tid):
-    c = await db.execute("SELECT id FROM users WHERE telegram_id=?",(tid,)); u = await c.fetchone()
-    if not u:
-        c = await db.execute("INSERT INTO users(telegram_id) VALUES(?)",(tid,)); await db.commit(); return c.lastrowid
-    return u["id"]
-
-async def get_session(db,tid):
-    c=await db.execute("SELECT state,data,created_at FROM session_states WHERE telegram_id=?",(tid,)); return await c.fetchone()
-async def save_session(db,tid,state,data=None):
-    await db.execute("INSERT OR REPLACE INTO session_states(telegram_id,state,data,created_at) VALUES(?,?,?,?)",
-                     (tid,state,json.dumps(data or {}),datetime.now().isoformat())); await db.commit()
-async def clear_session(db,tid):
-    await db.execute("DELETE FROM session_states WHERE telegram_id=?",(tid,)); await db.commit()
-
-async def get_system_state(db):
-    c = await db.execute("SELECT state,data,created_at FROM session_states WHERE telegram_id=?",(SYSTEM_BOT_TELEGRAM_ID,))
-    return await c.fetchone()
-
-async def save_system_state(db, state, data=None):
-    await db.execute(
-        "INSERT OR REPLACE INTO session_states(telegram_id,state,data,created_at) VALUES(?,?,?,?)",
-        (SYSTEM_BOT_TELEGRAM_ID, state, json.dumps(data or {}), datetime.now().isoformat())
-    )
-    await db.commit()
-
-async def _check_session_expiry(db,tid):
-    s=await get_session(db,tid)
-    if s and s["created_at"]:
-        created=datetime.fromisoformat(s["created_at"])
-        if session_is_expired(created, SESSION_TIMEOUT_MINUTES):
-            await clear_session(db,tid); return True
-    return False
-
-async def get_accounts(db,uid):
-    c=await db.execute("SELECT * FROM accounts WHERE user_id=? ORDER BY created_at",(uid,)); return await c.fetchall()
-
 async def check_alerts(db,tid,uid):
     c=await db.execute("""SELECT la.*,a.name,a.balance FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.telegram_id=? AND la.enabled=1 AND a.balance<la.threshold""",(tid,))
     rows = await c.fetchall()
@@ -851,9 +825,6 @@ async def _expense_ask_account(db,tid,uid,sdata,q):
     exp_amt2 = "{:.2f}".format(sdata.get('expenseAmount',0))
     await q.edit_message_text(f"Gasto: €{h(exp_amt2)} en {h(sdata.get('expenseCategory',''))}\n\nSelecciona la cuenta:",
                               reply_markup=_acct_kb(accts,"exp_acc",None))
-
-async def get_roundup(db,uid):
-    c=await db.execute("SELECT * FROM roundup_config WHERE user_id=?",(uid,)); return await c.fetchone()
 
 def _kb(buttons):
     return InlineKeyboardMarkup([[InlineKeyboardButton(t,callback_data=d)] for t,d in buttons])

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from finance_analytics import _build_anomalies, _format_panel_text
 from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
 from handlers_registry import register_handlers
+from finance_state import get_accounts, get_or_create_user
 
 
 class _FakeCursor:
@@ -51,6 +52,37 @@ class _FakeApplication:
 
     def add_handler(self, handler):
         self.handlers.append(handler)
+
+
+class _StateCursor:
+    def __init__(self, row=None, rows=None, lastrowid=None):
+        self._row = row
+        self._rows = rows or []
+        self.lastrowid = lastrowid
+
+    async def fetchone(self):
+        return self._row
+
+    async def fetchall(self):
+        return self._rows
+
+
+class _StateDB:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, sql, params=()):
+        self.calls.append((sql, params))
+        if sql.startswith("SELECT id FROM users"):
+            return _StateCursor(row=None)
+        if sql.startswith("INSERT INTO users"):
+            return _StateCursor(lastrowid=42)
+        if sql.startswith("SELECT * FROM accounts"):
+            return _StateCursor(rows=[{"id": 1, "name": "Caja", "balance": 100.0}])
+        raise AssertionError(f"unexpected query: {sql}")
+
+    async def commit(self):
+        return None
 
 
 class SharedHelpersTests(unittest.TestCase):
@@ -123,6 +155,11 @@ class AnalyticsTests(unittest.TestCase):
         ]}
         register_handlers(app, handlers)
         self.assertGreaterEqual(len(app.handlers), 40)
+
+    def test_state_helpers_use_database_adapter(self):
+        db = _StateDB()
+        self.assertEqual(asyncio.run(get_or_create_user(db, 9)), 42)
+        self.assertEqual(asyncio.run(get_accounts(db, 9))[0]["name"], "Caja")
 
 
 if __name__ == "__main__":
