@@ -472,6 +472,12 @@ class SupabaseDB:
                 {"user_id": p[0], "name": p[1], "amount": p[2], "frequency": p[3], "next_date": p[4], "category": p[5], "account_id": p[6], "type": "GASTO"}
             )
             return SupabaseCursor()
+        if q == "INSERT INTO recurring_expenses(user_id,name,amount,frequency,next_date,category,account_id,type) VALUES(?,?,?,?,?,?,?,?)":
+            await self._insert_row(
+                "recurring_expenses",
+                {"user_id": p[0], "name": p[1], "amount": p[2], "frequency": p[3], "next_date": p[4], "category": p[5], "account_id": p[6], "type": p[7]}
+            )
+            return SupabaseCursor()
         if q == "SELECT r.*,u.telegram_id FROM recurring_expenses r JOIN users u ON r.user_id=u.id WHERE r.next_date<=?":
             recs = await self._select_rows("recurring_expenses", filters=[("lte", "next_date", p[0])])
             if not recs:
@@ -990,6 +996,8 @@ async def cmd_help(update,ctx):
 /recurrente - Ver y gestionar gastos recurrentes
 /agregarrecurrente - Agregar nuevo gasto recurrente
 /borrarrecurrente - Eliminar un gasto recurrente
+/ingresorecurrente - Ver ingresos recurrentes
+/agregaringresorecurrente - Agregar nuevo ingreso recurrente
 
 <b>📊 REPORTES Y ANALISIS</b>
 /resumen - Resumen mensual con graficos y recomendaciones
@@ -1386,6 +1394,14 @@ async def cmd_ingresorecurrente(update,ctx):
     msg=f"💰 <b>Ingresos recurrentes:</b>\n<pre>{h(tbl)}</pre>\n<b>Total estimado mensual: €{h(f'{total:.2f}')}</b>\n\n"
     msg+="/agregaringresorecurrente - Agregar ingreso recurrente\n/cancel - Cancelar"
     await update.message.reply_text(msg,parse_mode=ParseMode.HTML)
+
+async def cmd_agregaringresorecurrente(update,ctx):
+    db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
+    accts = await get_accounts(db, uid)
+    if not accts:
+        return await update.message.reply_text("Crea una cuenta primero con /nuevacuenta")
+    await save_session(db,tid,"waiting_recurring_income_name")
+    await update.message.reply_text("¿Nombre del ingreso recurrente?\n(Ejemplo: Nomina, Renta, Dividendo)\n\n/cancel para cancelar")
     await save_session(db,update.effective_user.id,"menu_ingresorec")
 
 async def cmd_tendencia(update,ctx):
@@ -1717,6 +1733,34 @@ async def _hfc_rec_acc(db,tid,uid,sdata,d,q,update,ctx):
     ramt_val="{:.2f}".format(sdata["recurringAmount"])
     await q.edit_message_text(f"✅ Gasto recurrente añadido\n📅 {h(sdata['recurringName'])}\n💵 €{h(ramt_val)} ({h(sdata['recurringFrequency'])})",parse_mode=ParseMode.HTML)
 
+async def _hfc_rec_income_freq(db,tid,uid,sdata,d,q,update,ctx):
+    key = _cb_suffix_text(d, "freqinc_")
+    if key not in FREQ_MAP: return await q.edit_message_text("Opcion invalida.")
+    sdata["recurringIncomeFrequency"] = FREQ_MAP[key]
+    accts = await get_accounts(db, uid)
+    await save_session(db, tid, "waiting_recurring_income_account", sdata)
+    inc_amt = "{:.2f}".format(sdata.get("recurringIncomeAmount", 0))
+    await q.edit_message_text(
+        f"Ingreso recurrente: {h(sdata.get('recurringIncomeName',''))}\nMonto: €{h(inc_amt)}\nFrecuencia: {h(sdata['recurringIncomeFrequency'])}\n\nSelecciona la cuenta:",
+        reply_markup=_acct_kb(accts, "inc_rec_acc", None)
+    )
+
+async def _hfc_rec_income_acc(db,tid,uid,sdata,d,q,update,ctx):
+    aid = _cb_suffix_int(d, "inc_rec_acc_")
+    if aid is None: return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
+    amt = sdata.get("recurringIncomeAmount", 0)
+    if amt <= 0:
+        return await q.edit_message_text("❌ Cantidad invalida. Inicia de nuevo con /agregaringresorecurrente.")
+    await db.execute(
+        "INSERT INTO recurring_expenses(user_id,name,amount,frequency,next_date,category,account_id,type) VALUES(?,?,?,?,?,?,?,?)",
+        (uid, sdata["recurringIncomeName"], amt, sdata["recurringIncomeFrequency"], datetime.now().isoformat(), "Ingreso recurrente", aid, "INGRESO")
+    )
+    await db.commit(); await clear_session(db,tid)
+    await q.edit_message_text(
+        f"✅ Ingreso recurrente añadido\n📅 {h(sdata['recurringIncomeName'])}\n💵 €{h(f'{amt:.2f}')} ({h(sdata['recurringIncomeFrequency'])})",
+        parse_mode=ParseMode.HTML
+    )
+
 _FLOW_CALLBACK_MAP = {
     "waiting_account_type": ("type_", _hfc_acct_type),
     "waiting_expense_category": ("cat_", _hfc_expense_cat),
@@ -1726,6 +1770,8 @@ _FLOW_CALLBACK_MAP = {
     "waiting_recurring_frequency": ("freq_", _hfc_rec_freq),
     "waiting_recurring_category": ("rrcat_", _hfc_rec_cat),
     "waiting_recurring_account": ("rec_acc_", _hfc_rec_acc),
+    "waiting_recurring_income_frequency": ("freqinc_", _hfc_rec_income_freq),
+    "waiting_recurring_income_account": ("inc_rec_acc_", _hfc_rec_income_acc),
 }
 
 async def handle_flow_callback(update,ctx):
@@ -1816,6 +1862,22 @@ async def _ht_recurring_amount(db,tid,uid,text,sdata,update,ctx):
     sdata["recurringAmount"]=amt; await save_session(db,tid,"waiting_recurring_frequency",sdata)
     await update.message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None))
 
+async def _ht_recurring_income_name(db,tid,uid,text,sdata,update,ctx):
+    sdata["recurringIncomeName"] = text
+    await save_session(db,tid,"waiting_recurring_income_amount",sdata)
+    await update.message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
+
+async def _ht_recurring_income_amount(db,tid,uid,text,sdata,update,ctx):
+    amt=parse_amount(text)
+    if amt is None: return await update.message.reply_text("Cantidad invalida.")
+    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    sdata["recurringIncomeAmount"] = amt
+    await save_session(db,tid,"waiting_recurring_income_frequency",sdata)
+    await update.message.reply_text(
+        f"Ingreso recurrente: {h(sdata.get('recurringIncomeName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",
+        reply_markup=multi_kb(FREQ_KBD_ITEMS,"freqinc",cols=2,extra=None)
+    )
+
 async def _ht_alert_threshold(db,tid,uid,text,sdata,update,ctx):
     th=parse_amount(text)
     if th is None: return await update.message.reply_text("Cantidad invalida.")
@@ -1894,6 +1956,8 @@ _TEXT_HANDLERS = {
     "waiting_transfer_amount": _ht_transfer_amount,
     "waiting_recurring_name": _ht_recurring_name,
     "waiting_recurring_amount": _ht_recurring_amount,
+    "waiting_recurring_income_name": _ht_recurring_income_name,
+    "waiting_recurring_income_amount": _ht_recurring_income_amount,
     "waiting_alert_threshold": _ht_alert_threshold,
     "waiting_budget_amount": _ht_budget_amount,
     "waiting_goal_name": _ht_goal_name,
@@ -1973,12 +2037,13 @@ async def _create_ptb_app():
         application.add_handler(CommandHandler("metas",cmd_metas))
         application.add_handler(CommandHandler("nuevameta",cmd_nuevameta))
         application.add_handler(CommandHandler("aportarmeta",cmd_aportarmeta))
+        application.add_handler(CommandHandler("agregaringresorecurrente",cmd_agregaringresorecurrente))
         application.add_handler(CommandHandler("ingresorecurrente",cmd_ingresorecurrente))
         application.add_handler(CallbackQueryHandler(handle_menu_callback,pattern="^menu_.*"))
         application.add_handler(CallbackQueryHandler(handle_resumen_callback,pattern="^resumen_.*"))
         application.add_handler(CallbackQueryHandler(handle_budget_callback,pattern="^budcat_.*"))
         application.add_handler(CallbackQueryHandler(handle_callback,pattern="^(cancel_action|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*"))
-        application.add_handler(CallbackQueryHandler(handle_flow_callback,pattern="^(type_|cat_|expdate_|exp_acc_|inc_acc_|freq_|rrcat_|rec_acc_).*"))
+        application.add_handler(CallbackQueryHandler(handle_flow_callback,pattern="^(type_|cat_|expdate_|exp_acc_|inc_acc_|freq_|rrcat_|rec_acc_|freqinc_|inc_rec_acc_).*"))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_text))
         application.add_error_handler(_ptb_error_handler)
 
