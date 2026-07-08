@@ -4,7 +4,7 @@ Flask WSGI + python-telegram-bot + Supabase
 Features: cuentas, gastos/ingresos, traspasos, recurrentes, redondeo, deshacer, alertas, reportes, reset
 """
 
-import asyncio, csv, html, io, json, logging, math, os, sqlite3, sys
+import asyncio, calendar, csv, html, io, json, logging, math, os, re, sqlite3, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,6 +51,17 @@ TYPE_KBD_ITEMS = [("🏦 NOMINA","1"),("💰 AHORROS","2"),("📈 INVERSION","3"
 FREQ_KBD_ITEMS = [("📅 SEMANAL","1"),("📅 MENSUAL","2"),("📅 TRIMESTRAL","3"),("📅 ANUAL","4")]
 
 SESSION_TIMEOUT_MINUTES = 30
+SYSTEM_BOT_TELEGRAM_ID = 0
+
+SMART_CATEGORY_RULES = [
+    ("Comida", ["supermercado", "mercadona", "lidl", "carrefour", "restaurante", "bar", "comida", "glovo", "uber eats", "takeaway"]),
+    ("Transporte", ["metro", "bus", "tren", "taxi", "uber", "cabify", "gasolina", "parking", "peaje", "carga"]),
+    ("Suscripciones", ["netflix", "spotify", "disney", "hbo", "prime", "youtube premium", "suscripcion", "subscription"]),
+    ("Vivienda", ["alquiler", "hipoteca", "luz", "agua", "gas", "internet", "fibra"]),
+    ("Coche", ["itv", "taller", "seguro coche", "mantenimiento", "neumatico", "garage"]),
+    ("Entretenimiento", ["cine", "concierto", "juego", "gaming", "teatro", "ocio"]),
+    ("Utilidades", ["impuestos", "telefono", "mantenimiento", "seguridad", "software"]),
+]
 
 
 def h(text):
@@ -80,6 +91,33 @@ def _cb_suffix_text(data, prefix):
         return None
     suffix = data[len(prefix):]
     return suffix if suffix else None
+
+def _extract_tags(text):
+    if not text:
+        return []
+    return [t.lower() for t in re.findall(r"#([A-Za-z0-9_-]+)", text)]
+
+def _smart_category_suggestion(text):
+    if not text:
+        return None
+    lowered = text.lower()
+    for category, keywords in SMART_CATEGORY_RULES:
+        if any(keyword in lowered for keyword in keywords):
+            return category
+    return None
+
+def _month_shift(dt, months):
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+def _month_window(dt):
+    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end_day = calendar.monthrange(dt.year, dt.month)[1]
+    end = dt.replace(day=end_day, hour=23, minute=59, second=59, microsecond=999999)
+    return start, end
 
 
 async def _ptb_error_handler(update, context):
@@ -803,6 +841,17 @@ async def save_session(db,tid,state,data=None):
 async def clear_session(db,tid):
     await db.execute("DELETE FROM session_states WHERE telegram_id=?",(tid,)); await db.commit()
 
+async def get_system_state(db):
+    c = await db.execute("SELECT state,data,created_at FROM session_states WHERE telegram_id=?",(SYSTEM_BOT_TELEGRAM_ID,))
+    return await c.fetchone()
+
+async def save_system_state(db, state, data=None):
+    await db.execute(
+        "INSERT OR REPLACE INTO session_states(telegram_id,state,data,created_at) VALUES(?,?,?,?)",
+        (SYSTEM_BOT_TELEGRAM_ID, state, json.dumps(data or {}), datetime.now().isoformat())
+    )
+    await db.commit()
+
 async def _check_session_expiry(db,tid):
     s=await get_session(db,tid)
     if s and s["created_at"]:
@@ -899,6 +948,110 @@ async def savings_recs(db,uid,income,expense,by_cat):
     pot=expense*0.1
     if pot>0: recs.append(f"🎯 Si reduces gastos un 10%, podrias ahorrar €{pot:.2f} mas cada mes.")
     return recs or ["✅ Vas muy bien. Manten tus buenos habitos."]
+
+async def _monthly_category_spend(db, uid, dt):
+    start, end = _month_window(dt)
+    c = await db.execute(
+        "SELECT category,amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?",
+        (uid, start.isoformat(), end.isoformat())
+    )
+    totals = {}
+    for r in await c.fetchall():
+        totals[r["category"]] = totals.get(r["category"], 0.0) + r["amount"]
+    return totals
+
+async def _build_financial_snapshot(db, uid):
+    now = datetime.now()
+    month_start, month_end = _month_window(now)
+    c = await db.execute(
+        "SELECT type,amount,category,description FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA'",
+        (uid, month_start.isoformat(), month_end.isoformat())
+    )
+    txs = await c.fetchall()
+    income = expense = 0.0
+    by_cat = {}
+    tags = {}
+    for tx in txs:
+        if tx["type"] == "INGRESO":
+            income += tx["amount"]
+        elif tx["type"] == "GASTO":
+            expense += tx["amount"]
+            by_cat[tx["category"]] = by_cat.get(tx["category"], 0.0) + tx["amount"]
+            for tag in _extract_tags(tx.get("description")):
+                tags[tag] = tags.get(tag, 0) + 1
+    accts = await get_accounts(db, uid)
+    cash = sum(a["balance"] or 0 for a in accts)
+    days_elapsed = max(now.day, 1)
+    days_total = calendar.monthrange(now.year, now.month)[1]
+    remaining_days = max(days_total - days_elapsed, 0)
+    daily_net = (income - expense) / days_elapsed
+    projected_balance = cash + (daily_net * remaining_days)
+    return {
+        "now": now,
+        "income": income,
+        "expense": expense,
+        "balance": income - expense,
+        "cash": cash,
+        "by_cat": by_cat,
+        "tags": tags,
+        "projected_balance": projected_balance,
+        "remaining_days": remaining_days,
+        "days_elapsed": days_elapsed,
+        "days_total": days_total,
+    }
+
+async def _build_anomalies(db, uid):
+    now = datetime.now()
+    current = await _monthly_category_spend(db, uid, now)
+    previous = []
+    for offset in range(1, 4):
+        previous.append(await _monthly_category_spend(db, uid, _month_shift(now, -offset)))
+    anomalies = []
+    for category, cur in current.items():
+        prev_values = [m.get(category, 0.0) for m in previous]
+        avg_prev = sum(prev_values) / len(prev_values) if prev_values else 0.0
+        if avg_prev <= 0:
+            continue
+        if cur >= max(avg_prev * 1.5, avg_prev + 20):
+            anomalies.append((category, cur, avg_prev))
+    anomalies.sort(key=lambda item: item[1] - item[2], reverse=True)
+    return anomalies
+
+def _format_panel_text(snapshot, anomalies):
+    income = snapshot["income"]
+    expense = snapshot["expense"]
+    balance = snapshot["balance"]
+    cash = snapshot["cash"]
+    projected = snapshot["projected_balance"]
+    by_cat = snapshot["by_cat"]
+    tags = snapshot["tags"]
+    month = MONTHS_ES[snapshot["now"].month]
+    year = snapshot["now"].year
+    msg = (
+        f"📊 <b>Panel financiero — {h(month)} {h(year)}</b>\n\n"
+        f"📈 Ingresos: €{h(f'{income:.2f}')}\n"
+        f"📉 Gastos: €{h(f'{expense:.2f}')}\n"
+        f"💵 Balance del mes: €{h(f'{balance:.2f}')}\n"
+        f"🏦 Efectivo total: €{h(f'{cash:.2f}')}\n"
+        f"🔮 Proyección fin de mes: €{h(f'{projected:.2f}')}\n\n"
+    )
+    if by_cat:
+        msg += "<b>Top categorías:</b>\n"
+        for cat, amt in sorted(by_cat.items(), key=lambda e: e[1], reverse=True)[:5]:
+            msg += f"• {h(cat)}: €{h(f'{amt:.2f}')}\n"
+        msg += "\n"
+    if tags:
+        msg += "<b>Etiquetas activas:</b>\n"
+        for tag, count in sorted(tags.items(), key=lambda e: e[1], reverse=True)[:5]:
+            msg += f"• #{h(tag)} ({h(count)})\n"
+        msg += "\n"
+    if anomalies:
+        msg += "<b>Anomalías detectadas:</b>\n"
+        for cat, cur, avg_prev in anomalies[:5]:
+            msg += f"• {h(cat)}: €{h(f'{cur:.2f}')} vs media €{h(f'{avg_prev:.2f}')}\n"
+    else:
+        msg += "✅ Sin anomalías claras este mes.\n"
+    return msg
 
 async def check_alerts(db,tid,uid):
     c=await db.execute("""SELECT la.*,a.name,a.balance FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.telegram_id=? AND la.enabled=1 AND a.balance<la.threshold""",(tid,))
@@ -1009,6 +1162,11 @@ async def cmd_help(update,ctx):
 /resumen - Resumen mensual con graficos y recomendaciones
 /stats - Estadisticas ultimos 6 meses
 /tendencia - Analisis de tendencias (12 meses)
+/panel - Panel financiero con forecast y anomalías
+/forecast - Proyección de fin de mes
+/anomalias - Anomalias de gasto detectadas
+/tags - Etiquetas detectadas desde notas
+/sugerircategoria - Sugiere una categoría a partir de texto
 
 <b>🔔 ALERTAS</b>
 /alertas - Gestionar alertas de saldo bajo
@@ -1423,6 +1581,54 @@ async def cmd_tendencia(update,ctx):
         ediff=lv["expense"]-pv["expense"]; idiff=lv["income"]-pv["income"]
         ep=abs(ediff/pv["expense"]*100) if pv["expense"]>0 else 0; ip=abs(idiff/pv["income"]*100) if pv["income"]>0 else 0
         await update.message.reply_text(f"📊 <b>Analisis de Tendencia</b>\n\nGastos: {'📈' if ediff>0 else '📉'} {h(f'{ep:.1f}')}%\nIngresos: {'📈' if idiff>0 else '📉'} {h(f'{ip:.1f}')}%", parse_mode=ParseMode.HTML)
+
+async def cmd_panel(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    snapshot = await _build_financial_snapshot(db, uid)
+    anomalies = await _build_anomalies(db, uid)
+    await update.message.reply_text(_format_panel_text(snapshot, anomalies), parse_mode=ParseMode.HTML)
+
+async def cmd_anomalias(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    anomalies = await _build_anomalies(db, uid)
+    if not anomalies:
+        return await update.message.reply_text("✅ No se detectaron anomalías de gasto este mes.")
+    msg = "⚠️ <b>Anomalías de gasto</b>\n\n"
+    for cat, cur, avg_prev in anomalies:
+        msg += f"• {h(cat)}: €{h(f'{cur:.2f}')} vs media de 3 meses €{h(f'{avg_prev:.2f}')}\n"
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def cmd_forecast(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    snapshot = await _build_financial_snapshot(db, uid)
+    cash = snapshot["cash"]
+    projected = snapshot["projected_balance"]
+    msg = (
+        f"🔮 <b>Forecast de fin de mes</b>\n\n"
+        f"Saldo actual total: €{h(f'{cash:.2f}')}\n"
+        f"Proyección al cierre: €{h(f'{projected:.2f}')}\n"
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def cmd_tags(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    snapshot = await _build_financial_snapshot(db, uid)
+    if not snapshot["tags"]:
+        return await update.message.reply_text("No hay etiquetas (#tag) en tus notas todavía.")
+    msg = "🏷️ <b>Etiquetas detectadas</b>\n\n"
+    for tag, count in sorted(snapshot["tags"].items(), key=lambda e: e[1], reverse=True):
+        msg += f"• #{h(tag)}: {h(count)}\n"
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def cmd_sugerircategoria(update,ctx):
+    text = update.message.text.replace("/sugerircategoria", "", 1).strip()
+    if not text:
+        return await update.message.reply_text("Uso: /sugerircategoria <texto>\n\nEjemplo: /sugerircategoria supermercado mercadona")
+    category = _smart_category_suggestion(text)
+    if not category:
+        return await update.message.reply_text("No pude inferir una categoría clara. Prueba con más contexto.")
+    await update.message.reply_text(f"💡 Sugerencia: <b>{h(category)}</b>", parse_mode=ParseMode.HTML)
 
 async def cmd_exportar(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
@@ -2093,6 +2299,11 @@ async def _create_ptb_app():
         application.add_handler(CommandHandler("resumen",cmd_resumen))
         application.add_handler(CommandHandler("stats",cmd_stats))
         application.add_handler(CommandHandler("tendencia",cmd_tendencia))
+        application.add_handler(CommandHandler("panel",cmd_panel))
+        application.add_handler(CommandHandler("forecast",cmd_forecast))
+        application.add_handler(CommandHandler("anomalias",cmd_anomalias))
+        application.add_handler(CommandHandler("tags",cmd_tags))
+        application.add_handler(CommandHandler("sugerircategoria",cmd_sugerircategoria))
         application.add_handler(CommandHandler("exportar",cmd_exportar))
         application.add_handler(CommandHandler("alertas",cmd_alertas))
         application.add_handler(CommandHandler("agregaralerta",cmd_agregar_alerta))
@@ -2128,7 +2339,33 @@ async def _create_ptb_app():
                             parse_mode=ParseMode.HTML)
                     except Exception:
                         pass
+
+            async def maybe_send_weekly_panel(ctx):
+                db=application.bot_data["db"]
+                now=datetime.now()
+                if now.weekday() != 0:
+                    return
+                meta = await get_system_state(db)
+                meta_data = json.loads(meta["data"]) if meta and meta["data"] else {}
+                today = now.date().isoformat()
+                if meta_data.get("weekly_panel_last_sent") == today:
+                    return
+                users = await db._select_rows("users", columns="telegram_id")
+                for user in users:
+                    try:
+                        uid = user.get("telegram_id")
+                        if uid is None:
+                            continue
+                        snapshot = await _build_financial_snapshot(db, user["telegram_id"])
+                        anomalies = await _build_anomalies(db, user["telegram_id"])
+                        await ctx.bot.send_message(chat_id=user["telegram_id"], text=_format_panel_text(snapshot, anomalies), parse_mode=ParseMode.HTML)
+                    except Exception:
+                        logger.exception("No se pudo enviar el panel semanal")
+                meta_data["weekly_panel_last_sent"] = today
+                await save_system_state(db, "bot_meta", meta_data)
+
             application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
+            application.job_queue.run_repeating(maybe_send_weekly_panel, interval=3600, first=60)
         else:
             logger.warning("JobQueue not available. Recurring reminders disabled.")
 
