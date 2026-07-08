@@ -421,8 +421,14 @@ class SupabaseDB:
         if q == "INSERT INTO transactions(user_id,account_id,amount,type,category) VALUES(?,?,?,'INGRESO',?)":
             await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "INGRESO", "category": p[3]})
             return SupabaseCursor()
+        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,description) VALUES(?,?,?,'INGRESO',?,?)":
+            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "INGRESO", "category": p[3], "description": p[4]})
+            return SupabaseCursor()
         if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,date) VALUES(?,?,?,'GASTO',?,?)":
             await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "GASTO", "category": p[3], "date": p[4]})
+            return SupabaseCursor()
+        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,date,description) VALUES(?,?,?,'GASTO',?,?,?)":
+            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "GASTO", "category": p[3], "date": p[4], "description": p[5]})
             return SupabaseCursor()
         if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Redondeo',?,?)":
             await self._insert_row(
@@ -1402,7 +1408,6 @@ async def cmd_agregaringresorecurrente(update,ctx):
         return await update.message.reply_text("Crea una cuenta primero con /nuevacuenta")
     await save_session(db,tid,"waiting_recurring_income_name")
     await update.message.reply_text("¿Nombre del ingreso recurrente?\n(Ejemplo: Nomina, Renta, Dividendo)\n\n/cancel para cancelar")
-    await save_session(db,update.effective_user.id,"menu_ingresorec")
 
 async def cmd_tendencia(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
@@ -1674,24 +1679,12 @@ async def _hfc_expense_acc(db,tid,uid,sdata,d,q,update,ctx):
     acc=await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
     if not acc: return await q.edit_message_text("Cuenta no encontrada.")
     if acc["balance"]<amt: return await q.edit_message_text("❌ Saldo insuficiente en esta cuenta.")
-    exp_date=sdata.get("expenseDate",datetime.now().isoformat())
-    ops=[("INSERT INTO transactions(user_id,account_id,amount,type,category,date) VALUES(?,?,?,'GASTO',?,?)",(uid,aid,amt,cat,exp_date)),
-         ("UPDATE accounts SET balance=balance-? WHERE id=?",(amt,aid))]
-    rup=await get_roundup(db,uid)
-    if rup and rup["enabled"] and rup["account_id"] and rup["account_id"]!=aid:
-        rounded=math.ceil(amt); diff=rounded-amt
-        if diff>0:
-            ops.append(("UPDATE accounts SET balance=balance-? WHERE id=?",(diff,aid)))
-            ops.append(("UPDATE accounts SET balance=balance+? WHERE id=?",(diff,rup["account_id"])))
-            ops.append(("INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Redondeo',?,?)",(uid,aid,diff,f"Redondeo de €{amt:.2f}",rup["account_id"])))
-            await _tx_wrap(db,ops)
-            da=await (await db.execute("SELECT name FROM accounts WHERE id=?",(rup["account_id"],))).fetchone()
-            await clear_session(db,tid)
-            await q.edit_message_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}\n\n🪙 Redondeo: +€{h(f'{diff:.2f}')} → {h(da['name'])}")
-            await _check_budget_warning(db,uid,cat,update); return
-    await _tx_wrap(db,ops); await clear_session(db,tid)
-    await q.edit_message_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}")
-    await _check_budget_warning(db,uid,cat,update)
+    sdata["expenseAccountId"] = aid
+    await save_session(db,tid,"waiting_expense_note",sdata)
+    await q.edit_message_text(
+        f"Gasto: €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}\n\n¿Quieres añadir una nota o etiqueta?\nPuedes escribir algo como \"supermercado #hogar\" o usar /saltar.",
+        parse_mode=ParseMode.HTML
+    )
 
 async def _hfc_income_acc(db,tid,uid,sdata,d,q,update,ctx):
     aid = _cb_suffix_int(d, "inc_acc_")
@@ -1699,11 +1692,69 @@ async def _hfc_income_acc(db,tid,uid,sdata,d,q,update,ctx):
     amt=sdata.get("incomeAmount",0); conc=sdata.get("incomeConcept","")
     if amt <= 0:
         return await q.edit_message_text("❌ Cantidad invalida. Inicia de nuevo con /ingreso.")
-    await _tx_wrap(db,[("INSERT INTO transactions(user_id,account_id,amount,type,category) VALUES(?,?,?,'INGRESO',?)",(uid,aid,amt,conc)),
-                        ("UPDATE accounts SET balance=balance+? WHERE id=?",(amt,aid))])
     acc=await (await db.execute("SELECT name FROM accounts WHERE id=?",(aid,))).fetchone()
-    await clear_session(db,tid)
-    await q.edit_message_text(f"✅ Ingreso registrado\n💰 €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}")
+    sdata["incomeAccountId"] = aid
+    await save_session(db,tid,"waiting_income_note",sdata)
+    await q.edit_message_text(
+        f"Ingreso: €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}\n\n¿Quieres añadir una nota o etiqueta?\nPuedes escribir algo como \"nómina #salario\" o usar /saltar.",
+        parse_mode=ParseMode.HTML
+    )
+
+async def _finalize_expense_with_note(db, tid, uid, sdata, note, update):
+    aid = sdata["expenseAccountId"]
+    amt = sdata["expenseAmount"]
+    cat = sdata["expenseCategory"]
+    exp_date = sdata.get("expenseDate", datetime.now().isoformat())
+    acc = await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
+    if not acc:
+        await update.message.reply_text("Cuenta no encontrada.")
+        return
+    if acc["balance"] < amt:
+        await update.message.reply_text("❌ Saldo insuficiente en esta cuenta.")
+        return
+    ops = [(
+        "INSERT INTO transactions(user_id,account_id,amount,type,category,date,description) VALUES(?,?,?,'GASTO',?,?,?)",
+        (uid, aid, amt, cat, exp_date, note or "")
+    ), ("UPDATE accounts SET balance=balance-? WHERE id=?", (amt, aid))]
+    rup = await get_roundup(db, uid)
+    if rup and rup["enabled"] and rup["account_id"] and rup["account_id"] != aid:
+        rounded = math.ceil(amt)
+        diff = rounded - amt
+        if diff > 0:
+            ops.append(("UPDATE accounts SET balance=balance-? WHERE id=?", (diff, aid)))
+            ops.append(("UPDATE accounts SET balance=balance+? WHERE id=?", (diff, rup["account_id"])))
+            ops.append((
+                "INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Redondeo',?,?)",
+                (uid, aid, diff, f"Redondeo de €{amt:.2f}", rup["account_id"])
+            ))
+            await _tx_wrap(db, ops)
+            da = await (await db.execute("SELECT name FROM accounts WHERE id=?",(rup["account_id"],))).fetchone()
+            await clear_session(db, tid)
+            label = f"\n🏷️ {h(note)}" if note else ""
+            await update.message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}\n\n🪙 Redondeo: +€{h(f'{diff:.2f}')} → {h(da['name'])}", parse_mode=ParseMode.HTML)
+            await _check_budget_warning(db, uid, cat, update)
+            return
+    await _tx_wrap(db, ops)
+    await clear_session(db, tid)
+    label = f"\n🏷️ {h(note)}" if note else ""
+    await update.message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
+    await _check_budget_warning(db, uid, cat, update)
+
+async def _finalize_income_with_note(db, tid, uid, sdata, note, update):
+    aid = sdata["incomeAccountId"]
+    amt = sdata["incomeAmount"]
+    conc = sdata["incomeConcept"]
+    acc = await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
+    if not acc:
+        await update.message.reply_text("Cuenta no encontrada.")
+        return
+    await _tx_wrap(db,[
+        ("INSERT INTO transactions(user_id,account_id,amount,type,category,description) VALUES(?,?,?,'INGRESO',?,?)",(uid,aid,amt,conc,note or "")),
+        ("UPDATE accounts SET balance=balance+? WHERE id=?",(amt,aid))
+    ])
+    await clear_session(db, tid)
+    label = f"\n🏷️ {h(note)}" if note else ""
+    await update.message.reply_text(f"✅ Ingreso registrado\n💰 €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
 
 async def _hfc_rec_freq(db,tid,uid,sdata,d,q,update,ctx):
     key = _cb_suffix_text(d, "freq_")
@@ -1833,6 +1884,20 @@ async def _ht_income_concept(db,tid,uid,text,sdata,update,ctx):
     inc_amt="{:.2f}".format(sdata.get('incomeAmount',0))
     await update.message.reply_text(f"Ingreso: €{h(inc_amt)}\nConcepto: {h(text)}\n\nSelecciona la cuenta donde ingresa el dinero:",reply_markup=_acct_kb(accts,"inc_acc",None))
 
+async def _ht_expense_note(db,tid,uid,text,sdata,update,ctx):
+    if text == "/saltar":
+        note = ""
+    else:
+        note = text
+    await _finalize_expense_with_note(db, tid, uid, sdata, note, update)
+
+async def _ht_income_note(db,tid,uid,text,sdata,update,ctx):
+    if text == "/saltar":
+        note = ""
+    else:
+        note = text
+    await _finalize_income_with_note(db, tid, uid, sdata, note, update)
+
 async def _ht_transfer_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.message.reply_text("Cantidad invalida.")
@@ -1950,9 +2015,11 @@ _TEXT_HANDLERS = {
     "waiting_account_name": _ht_acct_name,
     "waiting_account_balance": _ht_acct_balance,
     "waiting_expense_amount": _ht_expense_amount,
+    "waiting_expense_note": _ht_expense_note,
     "waiting_expense_date_custom": _ht_expense_date_custom,
     "waiting_income_amount": _ht_income_amount,
     "waiting_income_concept": _ht_income_concept,
+    "waiting_income_note": _ht_income_note,
     "waiting_transfer_amount": _ht_transfer_amount,
     "waiting_recurring_name": _ht_recurring_name,
     "waiting_recurring_amount": _ht_recurring_amount,
