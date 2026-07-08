@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 
 from finance_analytics import _build_anomalies, _format_panel_text
+from finance_notifications import _check_budget_warning, check_alerts
 from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
 from handlers_registry import register_handlers
 from finance_state import get_accounts, get_or_create_user
@@ -81,6 +82,45 @@ class _StateDB:
         if sql.startswith("SELECT * FROM accounts"):
             return _StateCursor(rows=[{"id": 1, "name": "Caja", "balance": 100.0}])
         raise AssertionError(f"unexpected query: {sql}")
+
+    async def commit(self):
+        return None
+
+
+class _NotifCursor:
+    def __init__(self, row=None, rows=None):
+        self._row = row
+        self._rows = rows or []
+
+    async def fetchone(self):
+        return self._row
+
+    async def fetchall(self):
+        return self._rows
+
+
+class _NotifDB:
+    async def execute(self, sql, params=()):
+        if "low_balance_alerts" in sql:
+            return _NotifCursor(rows=[{"name": "Caja", "balance": 50.0, "threshold": 100.0}])
+        if "SELECT amount FROM budgets" in sql:
+            return _NotifCursor(row={"amount": 100.0})
+        if "SUM(amount) as total" in sql:
+            return _NotifCursor(row={"total": 95.0})
+        raise AssertionError(f"unexpected query: {sql}")
+
+
+class _Reply:
+    def __init__(self):
+        self.messages = []
+
+    async def reply_text(self, text, parse_mode=None):
+        self.messages.append((text, parse_mode))
+
+
+class _NotifUpdate:
+    def __init__(self):
+        self.message = _Reply()
 
     async def commit(self):
         return None
@@ -171,6 +211,13 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(len(mkb.inline_keyboard), 2)
         ckb = _confirm_kb("ok", "ignored")
         self.assertEqual(len(ckb.inline_keyboard), 2)
+
+    def test_notifications_helpers(self):
+        alerts = asyncio.run(check_alerts(_NotifDB(), 1, 1))
+        self.assertTrue(alerts and "ALERTA" in alerts[0])
+        update = _NotifUpdate()
+        asyncio.run(_check_budget_warning(_NotifDB(), 1, "Comida", update))
+        self.assertTrue(update.message.messages)
 
 
 if __name__ == "__main__":
