@@ -96,58 +96,9 @@ async def _ptb_error_handler(update, context):
     logger.exception("Unhandled PTB exception", exc_info=context.error)
 
 
-class DBIntegrityError(Exception):
-    pass
-
-
-def _norm_sql(sql):
-    return " ".join(sql.strip().split())
-
-
-def _supabase_error_payload(err):
-    args = getattr(err, "args", ())
-    if args and isinstance(args[0], dict):
-        return args[0]
-    payload = {}
-    code = getattr(err, "code", None)
-    message = getattr(err, "message", None)
-    details = getattr(err, "details", None)
-    hint = getattr(err, "hint", None)
-    if code is not None:
-        payload["code"] = code
-    if message:
-        payload["message"] = message
-    if details:
-        payload["details"] = details
-    if hint:
-        payload["hint"] = hint
-    return payload
-
-
-def _is_rls_denied(err):
-    if PostgrestAPIError is not None and not isinstance(err, PostgrestAPIError):
-        return False
-    payload = _supabase_error_payload(err)
-    code = str(payload.get("code", "")).strip()
-    message = str(payload.get("message", "")).lower()
-    return code == "42501" and "row-level security" in message
-
-
-class SupabaseCursor:
-    def __init__(self, rows=None, lastrowid=None):
-        self._rows = rows or []
-        self.lastrowid = lastrowid
-
-    async def fetchone(self):
-        return self._rows[0] if self._rows else None
-
-    async def fetchall(self):
-        return self._rows
-
-
 class SupabaseDB:
-    def __init__(self, url, key):
-        self.client = create_client(url, key)
+    pass
+    """Legacy Supabase adapter kept as dead text during refactor.
 
     async def _run(self, fn):
         try:
@@ -595,6 +546,7 @@ class SupabaseDB:
     async def executescript(self, _script):
         return None
 
+    """
 
 async def _tx_wrap(db, ops):
     await db.execute("BEGIN")
