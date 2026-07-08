@@ -45,6 +45,7 @@ from finance_shared import (
     h,
     parse_amount,
 )
+from finance_db import DBIntegrityError as FinanceDBIntegrityError, SupabaseDB as FinanceSupabaseDB
 
 try:
     from supabase import create_client
@@ -766,7 +767,7 @@ async def init_db():
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("Configura SUPABASE_URL y SUPABASE_KEY en variables de entorno.")
 
-    db = SupabaseDB(SUPABASE_URL, SUPABASE_KEY)
+    db = FinanceSupabaseDB(SUPABASE_URL, SUPABASE_KEY)
     # Verifica conectividad/esquema base
     try:
         await db._select_rows("users", columns="id", limit=1)
@@ -1827,7 +1828,7 @@ async def _ht_acct_balance(db,tid,uid,text,sdata,update,ctx):
         await db.execute("INSERT INTO accounts(user_id,name,type,balance) VALUES(?,?,?,?)",(uid,sdata["accountName"],sdata["accountType"],bal))
         await db.commit(); await clear_session(db,tid)
         await update.message.reply_text(f"✅ Cuenta <b>{h(sdata['accountName'])}</b> creada correctamente con saldo €{h(f'{bal:.2f}')}", parse_mode=ParseMode.HTML)
-    except DBIntegrityError:
+    except FinanceDBIntegrityError:
         await clear_session(db,tid); await update.message.reply_text("Error al crear la cuenta. Probablemente ya existe una con ese nombre.", parse_mode=ParseMode.HTML)
 
 async def _ht_expense_amount(db,tid,uid,text,sdata,update,ctx):
