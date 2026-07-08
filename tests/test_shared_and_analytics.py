@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from finance_analytics import _build_anomalies, _format_panel_text
 from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
+from handlers_registry import register_handlers
 
 
 class _FakeCursor:
@@ -42,6 +43,14 @@ class _FakeDB:
         if "SELECT * FROM accounts WHERE user_id=? ORDER BY created_at" in sql:
             return _FakeCursor(rows=[{"balance": 300.0}, {"balance": 200.0}])
         raise AssertionError(f"unexpected query: {sql}")
+
+
+class _FakeApplication:
+    def __init__(self):
+        self.handlers = []
+
+    def add_handler(self, handler):
+        self.handlers.append(handler)
 
 
 class SharedHelpersTests(unittest.TestCase):
@@ -94,6 +103,26 @@ class AnalyticsTests(unittest.TestCase):
         panel = _format_panel_text(snapshot, anomalies)
         self.assertIn("Panel financiero", panel)
         self.assertIn("Anomalías detectadas", panel)
+
+    def test_handler_registry_registers_expected_commands(self):
+        app = _FakeApplication()
+        handlers = {name: (lambda *args, **kwargs: None) for name in [
+            "cmd_start", "cmd_help", "cmd_menu", "cmd_cancel", "cmd_cuentas",
+            "cmd_nueva_cuenta", "cmd_borrar_cuenta", "cmd_gasto", "cmd_ingreso",
+            "cmd_traspaso", "cmd_deshacer", "cmd_redondeo", "cmd_redondeo_toggle",
+            "cmd_redondeo_cuenta", "cmd_recurrente", "cmd_agregar_recurrente",
+            "cmd_borrar_recurrente", "cmd_resumen", "cmd_stats", "cmd_tendencia",
+            "cmd_panel", "cmd_forecast", "cmd_anomalias", "cmd_tags",
+            "cmd_sugerircategoria", "cmd_exportar", "cmd_alertas",
+            "cmd_agregar_alerta", "cmd_borrar_alerta", "cmd_reset",
+            "cmd_presupuesto", "cmd_presupuestoset", "cmd_buscar", "cmd_metas",
+            "cmd_nuevameta", "cmd_aportarmeta", "cmd_agregaringresorecurrente",
+            "cmd_ingresorecurrente", "handle_menu_callback",
+            "handle_resumen_callback", "handle_budget_callback",
+            "handle_callback", "handle_flow_callback", "handle_text",
+        ]}
+        register_handlers(app, handlers)
+        self.assertGreaterEqual(len(app.handlers), 40)
 
 
 if __name__ == "__main__":

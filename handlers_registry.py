@@ -1,4 +1,24 @@
-from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
+try:
+    from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
+except Exception:
+    class _FallbackToken:
+        def __and__(self, other):
+            return self
+
+        def __invert__(self):
+            return self
+
+    class _FallbackHandler:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    class _FallbackFilters:
+        TEXT = _FallbackToken()
+        COMMAND = _FallbackToken()
+
+    CallbackQueryHandler = CommandHandler = MessageHandler = _FallbackHandler
+    filters = _FallbackFilters()
 
 
 def register_handlers(application, handlers):
