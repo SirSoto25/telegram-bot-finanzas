@@ -47,6 +47,7 @@ from finance_shared import (
     session_is_expired,
 )
 from finance_db import DBIntegrityError as FinanceDBIntegrityError, SupabaseDB as FinanceSupabaseDB
+from handlers_registry import register_handlers
 
 try:
     from supabase import create_client
@@ -2047,51 +2048,52 @@ async def _create_ptb_app():
             return ptb_app
         application = Application.builder().token(TOKEN).build()
         application.bot_data["db"] = await init_db()
-
-        application.add_handler(CommandHandler("start",cmd_start))
-        application.add_handler(CommandHandler("help",cmd_help))
-        application.add_handler(CommandHandler("menu",cmd_menu))
-        application.add_handler(CommandHandler("cancel",cmd_cancel))
-        application.add_handler(CommandHandler("cuentas",cmd_cuentas))
-        application.add_handler(CommandHandler("nuevacuenta",cmd_nueva_cuenta))
-        application.add_handler(CommandHandler("borrarcuenta",cmd_borrar_cuenta))
-        application.add_handler(CommandHandler("gasto",cmd_gasto))
-        application.add_handler(CommandHandler("ingreso",cmd_ingreso))
-        application.add_handler(CommandHandler("traspaso",cmd_traspaso))
-        application.add_handler(CommandHandler("deshacer",cmd_deshacer))
-        application.add_handler(CommandHandler("redondeo",cmd_redondeo))
-        application.add_handler(CommandHandler("redondeotoggle",cmd_redondeo_toggle))
-        application.add_handler(CommandHandler("redondeocuenta",cmd_redondeo_cuenta))
-        application.add_handler(CommandHandler("recurrente",cmd_recurrente))
-        application.add_handler(CommandHandler("agregarrecurrente",cmd_agregar_recurrente))
-        application.add_handler(CommandHandler("borrarrecurrente",cmd_borrar_recurrente))
-        application.add_handler(CommandHandler("resumen",cmd_resumen))
-        application.add_handler(CommandHandler("stats",cmd_stats))
-        application.add_handler(CommandHandler("tendencia",cmd_tendencia))
-        application.add_handler(CommandHandler("panel",cmd_panel))
-        application.add_handler(CommandHandler("forecast",cmd_forecast))
-        application.add_handler(CommandHandler("anomalias",cmd_anomalias))
-        application.add_handler(CommandHandler("tags",cmd_tags))
-        application.add_handler(CommandHandler("sugerircategoria",cmd_sugerircategoria))
-        application.add_handler(CommandHandler("exportar",cmd_exportar))
-        application.add_handler(CommandHandler("alertas",cmd_alertas))
-        application.add_handler(CommandHandler("agregaralerta",cmd_agregar_alerta))
-        application.add_handler(CommandHandler("borraralerta",cmd_borrar_alerta))
-        application.add_handler(CommandHandler("reset",cmd_reset))
-        application.add_handler(CommandHandler("presupuesto",cmd_presupuesto))
-        application.add_handler(CommandHandler("presupuestoset",cmd_presupuestoset))
-        application.add_handler(CommandHandler("buscar",cmd_buscar))
-        application.add_handler(CommandHandler("metas",cmd_metas))
-        application.add_handler(CommandHandler("nuevameta",cmd_nuevameta))
-        application.add_handler(CommandHandler("aportarmeta",cmd_aportarmeta))
-        application.add_handler(CommandHandler("agregaringresorecurrente",cmd_agregaringresorecurrente))
-        application.add_handler(CommandHandler("ingresorecurrente",cmd_ingresorecurrente))
-        application.add_handler(CallbackQueryHandler(handle_menu_callback,pattern="^menu_.*"))
-        application.add_handler(CallbackQueryHandler(handle_resumen_callback,pattern="^resumen_.*"))
-        application.add_handler(CallbackQueryHandler(handle_budget_callback,pattern="^budcat_.*"))
-        application.add_handler(CallbackQueryHandler(handle_callback,pattern="^(cancel_action|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*"))
-        application.add_handler(CallbackQueryHandler(handle_flow_callback,pattern="^(type_|cat_|expdate_|exp_acc_|inc_acc_|freq_|rrcat_|rec_acc_|freqinc_|inc_rec_acc_).*"))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_text))
+        register_handlers(application, {
+            "cmd_start": cmd_start,
+            "cmd_help": cmd_help,
+            "cmd_menu": cmd_menu,
+            "cmd_cancel": cmd_cancel,
+            "cmd_cuentas": cmd_cuentas,
+            "cmd_nueva_cuenta": cmd_nueva_cuenta,
+            "cmd_borrar_cuenta": cmd_borrar_cuenta,
+            "cmd_gasto": cmd_gasto,
+            "cmd_ingreso": cmd_ingreso,
+            "cmd_traspaso": cmd_traspaso,
+            "cmd_deshacer": cmd_deshacer,
+            "cmd_redondeo": cmd_redondeo,
+            "cmd_redondeo_toggle": cmd_redondeo_toggle,
+            "cmd_redondeo_cuenta": cmd_redondeo_cuenta,
+            "cmd_recurrente": cmd_recurrente,
+            "cmd_agregar_recurrente": cmd_agregar_recurrente,
+            "cmd_borrar_recurrente": cmd_borrar_recurrente,
+            "cmd_resumen": cmd_resumen,
+            "cmd_stats": cmd_stats,
+            "cmd_tendencia": cmd_tendencia,
+            "cmd_panel": cmd_panel,
+            "cmd_forecast": cmd_forecast,
+            "cmd_anomalias": cmd_anomalias,
+            "cmd_tags": cmd_tags,
+            "cmd_sugerircategoria": cmd_sugerircategoria,
+            "cmd_exportar": cmd_exportar,
+            "cmd_alertas": cmd_alertas,
+            "cmd_agregar_alerta": cmd_agregar_alerta,
+            "cmd_borrar_alerta": cmd_borrar_alerta,
+            "cmd_reset": cmd_reset,
+            "cmd_presupuesto": cmd_presupuesto,
+            "cmd_presupuestoset": cmd_presupuestoset,
+            "cmd_buscar": cmd_buscar,
+            "cmd_metas": cmd_metas,
+            "cmd_nuevameta": cmd_nuevameta,
+            "cmd_aportarmeta": cmd_aportarmeta,
+            "cmd_agregaringresorecurrente": cmd_agregaringresorecurrente,
+            "cmd_ingresorecurrente": cmd_ingresorecurrente,
+            "handle_menu_callback": handle_menu_callback,
+            "handle_resumen_callback": handle_resumen_callback,
+            "handle_budget_callback": handle_budget_callback,
+            "handle_callback": handle_callback,
+            "handle_flow_callback": handle_flow_callback,
+            "handle_text": handle_text,
+        })
         application.add_error_handler(_ptb_error_handler)
 
         await application.initialize(); await application.start()
