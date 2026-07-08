@@ -1,9 +1,9 @@
 import asyncio
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from finance_analytics import _build_anomalies, _format_panel_text
-from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount
+from finance_shared import _cb_suffix_int, _extract_tags, _month_window, parse_amount, session_is_expired
 
 
 class _FakeCursor:
@@ -62,6 +62,11 @@ class SharedHelpersTests(unittest.TestCase):
         self.assertEqual(end.day, 31)
         self.assertEqual(start.hour, 0)
         self.assertEqual(end.hour, 23)
+
+    def test_session_expiry_handles_timezone_awareness(self):
+        created = datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 8, 10, 31, 0, tzinfo=timezone.utc)
+        self.assertTrue(session_is_expired(created, 30, now=now))
 
 
 class AnalyticsTests(unittest.TestCase):

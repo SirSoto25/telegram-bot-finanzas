@@ -44,6 +44,7 @@ from finance_shared import (
     _smart_category_suggestion,
     h,
     parse_amount,
+    session_is_expired,
 )
 from finance_db import DBIntegrityError as FinanceDBIntegrityError, SupabaseDB as FinanceSupabaseDB
 
@@ -814,8 +815,7 @@ async def _check_session_expiry(db,tid):
     s=await get_session(db,tid)
     if s and s["created_at"]:
         created=datetime.fromisoformat(s["created_at"])
-        now = datetime.now(created.tzinfo) if created.tzinfo is not None else datetime.now()
-        if now-created>timedelta(minutes=SESSION_TIMEOUT_MINUTES):
+        if session_is_expired(created, SESSION_TIMEOUT_MINUTES):
             await clear_session(db,tid); return True
     return False
 

@@ -1,7 +1,7 @@
 import calendar
 import html
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 CATEGORY_MAP = {"1":"Comida","2":"Transporte","3":"Suscripciones","4":"Coche","5":"Entretenimiento","6":"Vivienda","7":"Utilidades","8":"Otros"}
 ACCOUNT_TYPE_MAP = {"1":"NOMINA","2":"AHORROS","3":"INVERSION","4":"CRIPTO"}
@@ -73,3 +73,12 @@ def _month_window(dt):
     end_day = calendar.monthrange(dt.year, dt.month)[1]
     end = dt.replace(day=end_day, hour=23, minute=59, second=59, microsecond=999999)
     return start, end
+
+def session_is_expired(created_at, timeout_minutes, now=None):
+    if created_at is None:
+        return False
+    if now is None:
+        current = datetime.now(created_at.tzinfo) if created_at.tzinfo is not None else datetime.now()
+    else:
+        current = now
+    return current - created_at > timedelta(minutes=timeout_minutes)
