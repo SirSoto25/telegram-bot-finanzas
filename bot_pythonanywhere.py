@@ -1923,6 +1923,7 @@ app = Flask(__name__)
 application = app
 ptb_app = None
 _event_loop = None
+_ptb_app_lock = asyncio.Lock()
 
 def get_event_loop():
     global _event_loop
@@ -1932,70 +1933,75 @@ def get_event_loop():
 
 async def _create_ptb_app():
     global ptb_app
-    if ptb_app is not None: return ptb_app
-    application = Application.builder().token(TOKEN).build()
-    application.bot_data["db"] = await init_db()
+    if ptb_app is not None:
+        return ptb_app
 
-    application.add_handler(CommandHandler("start",cmd_start))
-    application.add_handler(CommandHandler("help",cmd_help))
-    application.add_handler(CommandHandler("menu",cmd_menu))
-    application.add_handler(CommandHandler("cancel",cmd_cancel))
-    application.add_handler(CommandHandler("cuentas",cmd_cuentas))
-    application.add_handler(CommandHandler("nuevacuenta",cmd_nueva_cuenta))
-    application.add_handler(CommandHandler("borrarcuenta",cmd_borrar_cuenta))
-    application.add_handler(CommandHandler("gasto",cmd_gasto))
-    application.add_handler(CommandHandler("ingreso",cmd_ingreso))
-    application.add_handler(CommandHandler("traspaso",cmd_traspaso))
-    application.add_handler(CommandHandler("deshacer",cmd_deshacer))
-    application.add_handler(CommandHandler("redondeo",cmd_redondeo))
-    application.add_handler(CommandHandler("redondeotoggle",cmd_redondeo_toggle))
-    application.add_handler(CommandHandler("redondeocuenta",cmd_redondeo_cuenta))
-    application.add_handler(CommandHandler("recurrente",cmd_recurrente))
-    application.add_handler(CommandHandler("agregarrecurrente",cmd_agregar_recurrente))
-    application.add_handler(CommandHandler("borrarrecurrente",cmd_borrar_recurrente))
-    application.add_handler(CommandHandler("resumen",cmd_resumen))
-    application.add_handler(CommandHandler("stats",cmd_stats))
-    application.add_handler(CommandHandler("tendencia",cmd_tendencia))
-    application.add_handler(CommandHandler("exportar",cmd_exportar))
-    application.add_handler(CommandHandler("alertas",cmd_alertas))
-    application.add_handler(CommandHandler("agregaralerta",cmd_agregar_alerta))
-    application.add_handler(CommandHandler("borraralerta",cmd_borrar_alerta))
-    application.add_handler(CommandHandler("reset",cmd_reset))
-    application.add_handler(CommandHandler("presupuesto",cmd_presupuesto))
-    application.add_handler(CommandHandler("presupuestoset",cmd_presupuestoset))
-    application.add_handler(CommandHandler("buscar",cmd_buscar))
-    application.add_handler(CommandHandler("metas",cmd_metas))
-    application.add_handler(CommandHandler("nuevameta",cmd_nuevameta))
-    application.add_handler(CommandHandler("aportarmeta",cmd_aportarmeta))
-    application.add_handler(CommandHandler("ingresorecurrente",cmd_ingresorecurrente))
-    application.add_handler(CallbackQueryHandler(handle_menu_callback,pattern="^menu_.*"))
-    application.add_handler(CallbackQueryHandler(handle_resumen_callback,pattern="^resumen_.*"))
-    application.add_handler(CallbackQueryHandler(handle_budget_callback,pattern="^budcat_.*"))
-    application.add_handler(CallbackQueryHandler(handle_callback,pattern="^(cancel_action|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*"))
-    application.add_handler(CallbackQueryHandler(handle_flow_callback,pattern="^(type_|cat_|expdate_|exp_acc_|inc_acc_|freq_|rrcat_|rec_acc_).*"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_text))
-    application.add_error_handler(_ptb_error_handler)
+    async with _ptb_app_lock:
+        if ptb_app is not None:
+            return ptb_app
+        application = Application.builder().token(TOKEN).build()
+        application.bot_data["db"] = await init_db()
 
-    await application.initialize(); await application.start()
+        application.add_handler(CommandHandler("start",cmd_start))
+        application.add_handler(CommandHandler("help",cmd_help))
+        application.add_handler(CommandHandler("menu",cmd_menu))
+        application.add_handler(CommandHandler("cancel",cmd_cancel))
+        application.add_handler(CommandHandler("cuentas",cmd_cuentas))
+        application.add_handler(CommandHandler("nuevacuenta",cmd_nueva_cuenta))
+        application.add_handler(CommandHandler("borrarcuenta",cmd_borrar_cuenta))
+        application.add_handler(CommandHandler("gasto",cmd_gasto))
+        application.add_handler(CommandHandler("ingreso",cmd_ingreso))
+        application.add_handler(CommandHandler("traspaso",cmd_traspaso))
+        application.add_handler(CommandHandler("deshacer",cmd_deshacer))
+        application.add_handler(CommandHandler("redondeo",cmd_redondeo))
+        application.add_handler(CommandHandler("redondeotoggle",cmd_redondeo_toggle))
+        application.add_handler(CommandHandler("redondeocuenta",cmd_redondeo_cuenta))
+        application.add_handler(CommandHandler("recurrente",cmd_recurrente))
+        application.add_handler(CommandHandler("agregarrecurrente",cmd_agregar_recurrente))
+        application.add_handler(CommandHandler("borrarrecurrente",cmd_borrar_recurrente))
+        application.add_handler(CommandHandler("resumen",cmd_resumen))
+        application.add_handler(CommandHandler("stats",cmd_stats))
+        application.add_handler(CommandHandler("tendencia",cmd_tendencia))
+        application.add_handler(CommandHandler("exportar",cmd_exportar))
+        application.add_handler(CommandHandler("alertas",cmd_alertas))
+        application.add_handler(CommandHandler("agregaralerta",cmd_agregar_alerta))
+        application.add_handler(CommandHandler("borraralerta",cmd_borrar_alerta))
+        application.add_handler(CommandHandler("reset",cmd_reset))
+        application.add_handler(CommandHandler("presupuesto",cmd_presupuesto))
+        application.add_handler(CommandHandler("presupuestoset",cmd_presupuestoset))
+        application.add_handler(CommandHandler("buscar",cmd_buscar))
+        application.add_handler(CommandHandler("metas",cmd_metas))
+        application.add_handler(CommandHandler("nuevameta",cmd_nuevameta))
+        application.add_handler(CommandHandler("aportarmeta",cmd_aportarmeta))
+        application.add_handler(CommandHandler("ingresorecurrente",cmd_ingresorecurrente))
+        application.add_handler(CallbackQueryHandler(handle_menu_callback,pattern="^menu_.*"))
+        application.add_handler(CallbackQueryHandler(handle_resumen_callback,pattern="^resumen_.*"))
+        application.add_handler(CallbackQueryHandler(handle_budget_callback,pattern="^budcat_.*"))
+        application.add_handler(CallbackQueryHandler(handle_callback,pattern="^(cancel_action|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*"))
+        application.add_handler(CallbackQueryHandler(handle_flow_callback,pattern="^(type_|cat_|expdate_|exp_acc_|inc_acc_|freq_|rrcat_|rec_acc_).*"))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle_text))
+        application.add_error_handler(_ptb_error_handler)
 
-    if application.job_queue is not None:
-        async def check_recurring_reminders(ctx):
-            db=application.bot_data["db"]
-            now=datetime.now(); target=now+timedelta(days=1)
-            c=await db.execute("SELECT r.*,u.telegram_id FROM recurring_expenses r JOIN users u ON r.user_id=u.id WHERE r.next_date<=?",(target.isoformat(),))
-            for rec in await c.fetchall():
-                try:
-                    await ctx.bot.send_message(chat_id=rec["telegram_id"],
-                        text=f"📅 <b>Recordatorio de pago</b>\n\n{rec['name']}: €{'{:.2f}'.format(rec['amount'])} ({rec['frequency']})",
-                        parse_mode=ParseMode.HTML)
-                except Exception:
-                    pass
-        application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
-    else:
-        logger.warning("JobQueue not available. Recurring reminders disabled.")
+        await application.initialize(); await application.start()
 
-    ptb_app = application
-    return application
+        if application.job_queue is not None:
+            async def check_recurring_reminders(ctx):
+                db=application.bot_data["db"]
+                now=datetime.now(); target=now+timedelta(days=1)
+                c=await db.execute("SELECT r.*,u.telegram_id FROM recurring_expenses r JOIN users u ON r.user_id=u.id WHERE r.next_date<=?",(target.isoformat(),))
+                for rec in await c.fetchall():
+                    try:
+                        await ctx.bot.send_message(chat_id=rec["telegram_id"],
+                            text=f"📅 <b>Recordatorio de pago</b>\n\n{rec['name']}: €{'{:.2f}'.format(rec['amount'])} ({rec['frequency']})",
+                            parse_mode=ParseMode.HTML)
+                    except Exception:
+                        pass
+            application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
+        else:
+            logger.warning("JobQueue not available. Recurring reminders disabled.")
+
+        ptb_app = application
+        return application
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
