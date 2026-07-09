@@ -485,9 +485,10 @@ async def cmd_comparar(update,ctx):
         return await update.effective_message.reply_text("No hay datos suficientes para comparar.", parse_mode=ParseMode.HTML)
     tbl=unicode_table(["Categoria",comp["current_month"],comp["prev_month"],"Var"],comp["rows"])
     total_arrow="📈" if comp["total_pct"]>0 else ("📉" if comp["total_pct"]<0 else "➡️")
+    cur_v=comp["cur_total"]; prev_v=comp["prev_total"]; pct_v=comp["total_pct"]
     await update.effective_message.reply_text(
         f"📊 <b>Comparativa {comp['current_month']} vs {comp['prev_month']}</b>\n<pre>{h(tbl[:3500])}</pre>\n"
-        f"{total_arrow} Total: <b>€{h(f'{comp['cur_total']:.2f}')}</b> vs €{h(f'{comp['prev_total']:.2f}')} ({h(f'{comp['total_pct']:+.0f}')}%)",
+        f"{total_arrow} Total: <b>€{h(f'{cur_v:.2f}')}</b> vs €{h(f'{prev_v:.2f}')} ({h(f'{pct_v:+.0f}')}%)",
         parse_mode=ParseMode.HTML)
 
 
@@ -495,12 +496,13 @@ async def cmd_burnrate(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     br=await get_burn_rate(db,uid)
     days_msg=f"≈ <b>{br['days_left']} días</b>" if br["days_left"] is not None else "∞ (no hay gastos)"
+    bv=br["total_balance"]; dv=br["daily_avg"]; mv=br["month_projection"]
     await update.effective_message.reply_text(
         f"🔥 <b>Burn Rate</b>\n\n"
-        f"💰 Saldo total: <b>€{h(f'{br['total_balance']:.2f}')}</b>\n"
-        f"📉 Gasto medio diario (este mes): <b>€{h(f'{br['daily_avg']:.2f}')}</b>\n"
+        f"💰 Saldo total: <b>€{h(f'{bv:.2f}')}</b>\n"
+        f"📉 Gasto medio diario (este mes): <b>€{h(f'{dv:.2f}')}</b>\n"
         f"⏱ Días hasta agotar saldo: {days_msg}\n"
-        f"📅 Proyección fin de mes: <b>€{h(f'{br['month_projection']:.2f}')}</b> en {br['days_in_month']-br['days_elapsed']} días restantes",
+        f"📅 Proyección fin de mes: <b>€{h(f'{mv:.2f}')}</b> en {br['days_in_month']-br['days_elapsed']} días restantes",
         parse_mode=ParseMode.HTML)
 
 
