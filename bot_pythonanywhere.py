@@ -38,6 +38,7 @@ from finance_shared import (
     _cb_suffix_int,
     _cb_suffix_text,
     _extract_tags,
+    end_of_month,
     _month_shift,
     _month_window,
     _smart_category_suggestion,
@@ -573,7 +574,7 @@ async def cmd_presupuesto(update,ctx):
     c=await db.execute("SELECT category,amount FROM budgets WHERE user_id=? AND month=?",(uid,month))
     budgets=await c.fetchall()
     start=now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
-    end=(now.replace(year=now.year+1,month=1,day=1)-timedelta(seconds=1) if now.month==12 else (now.replace(month=now.month+1,day=1)-timedelta(seconds=1)))
+    end=end_of_month(now)
     c2=await db.execute("SELECT category,SUM(amount) as total FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=? GROUP BY category",(uid,start.isoformat(),end.isoformat()))
     spent={r["category"]:r["total"] for r in await c2.fetchall()}
     if not budgets: return await update.effective_message.reply_text("No tienes presupuestos configurados.\n\nUsa /presupuestoset para crear uno.",parse_mode=ParseMode.HTML)

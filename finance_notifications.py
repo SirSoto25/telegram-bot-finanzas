@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from finance_shared import h
+from finance_shared import end_of_month, h
 from finance_state import get_accounts, save_session
 from finance_ui import _acct_kb
 
@@ -24,11 +24,7 @@ async def _check_budget_warning(db, uid, category, update):
     now = datetime.now()
     month = f"{now.year}-{now.month:02d}"
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    end = (
-        now.replace(year=now.year + 1, month=1, day=1) - timedelta(seconds=1)
-        if now.month == 12
-        else now.replace(month=now.month + 1, day=1) - timedelta(seconds=1)
-    )
+    end = end_of_month(now)
     b = await (await db.execute("SELECT amount FROM budgets WHERE user_id=? AND category=? AND month=?", (uid, category, month))).fetchone()
     if not b:
         return

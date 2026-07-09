@@ -68,10 +68,13 @@ def _month_shift(dt, months):
     day = min(dt.day, calendar.monthrange(year, month)[1])
     return dt.replace(year=year, month=month, day=day)
 
+def end_of_month(dt):
+    end_day = calendar.monthrange(dt.year, dt.month)[1]
+    return dt.replace(day=end_day, hour=23, minute=59, second=59, microsecond=999999)
+
 def _month_window(dt):
     start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    end_day = calendar.monthrange(dt.year, dt.month)[1]
-    end = dt.replace(day=end_day, hour=23, minute=59, second=59, microsecond=999999)
+    end = end_of_month(dt)
     return start, end
 
 def session_is_expired(created_at, timeout_minutes, now=None):

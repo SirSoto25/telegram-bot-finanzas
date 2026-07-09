@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import calendar
 
-from finance_shared import MONTHS_ES, h, _extract_tags, _month_shift, _month_window
+from finance_shared import MONTHS_ES, end_of_month, h, _extract_tags, _month_shift, _month_window
 
 CATEGORY_EMOJI = {"Comida":"🍕","Transporte":"🚌","Suscripciones":"📺","Coche":"🚗","Entretenimiento":"🎮","Vivienda":"🏠","Utilidades":"💡","Otros":"🏷️"}
 
@@ -9,7 +9,7 @@ async def get_monthly_tx(db,uid,months=6):
     data,now={},datetime.now()
     for i in range(months-1,-1,-1):
         d=now-timedelta(days=30*i); start=d.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
-        end=(d.replace(year=d.year+1,month=1,day=1)-timedelta(seconds=1) if d.month==12 else (d.replace(month=d.month+1,day=1)-timedelta(seconds=1)))
+        end=end_of_month(d)
         key=f"{MONTHS_ES[start.month]} {start.year}"
         c=await db.execute("SELECT type,amount FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA'",(uid,start.isoformat(),end.isoformat()))
         rows=await c.fetchall()
@@ -59,7 +59,7 @@ async def predict_expenses(db,uid):
     now,cd=datetime.now(),{}
     for i in range(2,-1,-1):
         d=now-timedelta(days=30*i); start=d.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
-        end=(d.replace(year=d.year+1,month=1,day=1)-timedelta(seconds=1) if d.month==12 else (d.replace(month=d.month+1,day=1)-timedelta(seconds=1)))
+        end=end_of_month(d)
         c=await db.execute("SELECT category,amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?",(uid,start.isoformat(),end.isoformat()))
         for r in await c.fetchall(): cd.setdefault(r["category"],[]).append(r["amount"])
     preds=[]
