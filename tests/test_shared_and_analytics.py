@@ -193,7 +193,7 @@ class AnalyticsTests(unittest.TestCase):
             "cmd_panel", "cmd_patrimonio", "cmd_burnrate", "cmd_comparar", "cmd_ahorro",
             "cmd_consejo", "cmd_regla", "cmd_proyeccion", "cmd_fantasmas",
             "cmd_resumendiario", "cmd_factura", "cmd_facturas", "cmd_borrarfactura",
-            "cmd_racha", "cmd_logros", "cmd_resumen_anual", "cmd_forecast", "cmd_anomalias", "cmd_tags",
+            "cmd_racha", "cmd_logros", "cmd_resumen_anual", "cmd_split", "cmd_deudas", "cmd_forecast", "cmd_anomalias", "cmd_tags",
             "cmd_sugerircategoria", "cmd_exportar", "cmd_alertas",
             "cmd_agregar_alerta", "cmd_borrar_alerta", "cmd_reset",
             "cmd_presupuesto", "cmd_presupuestoset", "cmd_buscar", "cmd_metas",

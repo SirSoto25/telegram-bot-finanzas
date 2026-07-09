@@ -59,6 +59,8 @@ def register_handlers(application, handlers):
     application.add_handler(CommandHandler("racha", handlers["cmd_racha"]))
     application.add_handler(CommandHandler("logros", handlers["cmd_logros"]))
     application.add_handler(CommandHandler("resumenanual", handlers["cmd_resumen_anual"]))
+    application.add_handler(CommandHandler("split", handlers["cmd_split"]))
+    application.add_handler(CommandHandler("deudas", handlers["cmd_deudas"]))
     application.add_handler(CommandHandler("anomalias", handlers["cmd_anomalias"]))
     application.add_handler(CommandHandler("tags", handlers["cmd_tags"]))
     application.add_handler(CommandHandler("sugerircategoria", handlers["cmd_sugerircategoria"]))

@@ -639,6 +639,75 @@ async def cmd_resumen_anual(update,ctx):
         parse_mode=ParseMode.HTML)
 
 
+async def cmd_split(update,ctx):
+    text=update.effective_message.text.strip()
+    import re
+    m=re.match(r"/split\s+(\d+([.,]\d{1,2})?)\s*(.*)", text)
+    if not m:
+        return await update.effective_message.reply_text("Uso: /split &lt;cantidad&gt; @usuario1 @usuario2 ... [descripción]\n\nEjemplo: /split 60 @juan @maria cena", parse_mode=ParseMode.HTML)
+    amt=float(m.group(1).replace(",","."))
+    rest=m.group(3).strip()
+    usernames=re.findall(r"@(\w+)",rest)
+    desc=re.sub(r"@\w+","",rest).strip()
+    if not usernames:
+        return await update.effective_message.reply_text("Debes mencionar al menos un @usuario para dividir el gasto.", parse_mode=ParseMode.HTML)
+    db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
+    per_person=amt/(len(usernames)+1)
+    exp_data=await db._insert_row("shared_expenses",{"payer_id":uid,"description":desc or "Gasto compartido","total_amount":amt})
+    exp_id=exp_data.get("id")
+    if not exp_id:
+        return await update.effective_message.reply_text("Error al crear el gasto compartido.", parse_mode=ParseMode.HTML)
+    await db._insert_row("shared_expense_participants",{"expense_id":exp_id,"user_id":uid,"amount":per_person,"paid":True})
+    for uname in usernames:
+        if uname.isdigit():
+            urow=await db._select_rows("users",columns="id",filters=[("eq","telegram_id",int(uname))],limit=1)
+        else:
+            urow=[]
+        if urow:
+            await db._insert_row("shared_expense_participants",{"expense_id":exp_id,"user_id":urow[0]["id"],"amount":per_person,"paid":False})
+    lines="\n".join(f"• @{u}: €{per_person:.2f}" for u in usernames)
+    await update.effective_message.reply_text(
+        f"💸 <b>Gasto compartido</b>\n\n{desc or 'Gasto'}: <b>€{amt:.2f}</b>\nDividido entre {len(usernames)+1} personas (€{per_person:.2f} c/u)\n\n{lines}\n\nUsa /deudas para ver lo que te deben.",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_deudas(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    owe_you=[]
+    you_owe=[]
+    my_expenses=await db._select_rows("shared_expenses",filters=[("eq","payer_id",uid)])
+    for exp in my_expenses:
+        debs=await db._select_rows("shared_expense_participants",filters=[("eq","expense_id",exp["id"]),("eq","paid",False)])
+        for d in debs:
+            if d["user_id"]==uid:
+                continue
+            urow=await db._select_rows("users",columns="telegram_id",filters=[("eq","id",d["user_id"])],limit=1)
+            who=str(urow[0]["telegram_id"]) if urow else str(d["user_id"])
+            owe_you.append((who,exp["description"] or "Gasto",d["amount"]))
+    part_rows=await db._select_rows("shared_expense_participants",filters=[("eq","user_id",uid),("eq","paid",False)])
+    for p in part_rows:
+        exp=await db._select_rows("shared_expenses",columns="payer_id,description",filters=[("eq","id",p["expense_id"])],limit=1)
+        if exp and exp[0]["payer_id"]!=uid:
+            payer_row=await db._select_rows("users",columns="telegram_id",filters=[("eq","id",exp[0]["payer_id"])],limit=1)
+            who=str(payer_row[0]["telegram_id"]) if payer_row else str(exp[0]["payer_id"])
+            you_owe.append((who,exp[0]["description"] or "Gasto",p["amount"]))
+    msg="💳 <b>Deudas</b>\n\n"
+    if owe_you:
+        msg+="<b>Te deben:</b>\n"
+        for who,desc,amt in owe_you:
+            msg+=f"• De @{who}: €{amt:.2f} — {desc}\n"
+    else:
+        msg+="<b>Te deben:</b> nada\n"
+    msg+="\n"
+    if you_owe:
+        msg+="<b>Debes:</b>\n"
+        for who,desc,amt in you_owe:
+            msg+=f"• A @{who}: €{amt:.2f} — {desc}\n"
+    else:
+        msg+="<b>Debes:</b> nada\n"
+    await update.effective_message.reply_text(msg,parse_mode=ParseMode.HTML)
+
+
 async def cmd_factura(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     accts=await get_accounts(db,uid)
