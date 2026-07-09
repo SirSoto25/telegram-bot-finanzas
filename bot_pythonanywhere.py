@@ -714,7 +714,7 @@ async def get_db():
 async def cmd_start(update:Update,ctx):
     db=await get_db(); tid=update.effective_user.id
     await get_or_create_user(db,tid); await clear_session(db,tid)
-    await update.message.reply_text("""
+    await update.effective_message.reply_text("""
 📊 <b>Bot de Finanzas Personales</b>
 
 ¡Hola! Soy tu asistente de finanzas. Puedo ayudarte a:
@@ -735,7 +735,7 @@ async def cmd_start(update:Update,ctx):
 """, parse_mode=ParseMode.HTML)
 
 async def cmd_help(update,ctx):
-    await update.message.reply_text("""
+    await update.effective_message.reply_text("""
 <b>📚 Guia Completa de Comandos</b>
 
 <b>💼 GESTION DE CUENTAS</b>
@@ -821,7 +821,7 @@ async def cmd_menu(update,ctx):
         ("💼 Ver Cuentas","menu_cuentas"),("🪙 Redondeo","menu_redondeo"),
         ("📥 Exportar CSV","menu_exportar"),("❓ Ayuda","menu_help"),
     ]
-    await update.message.reply_text("📊 <b>Panel Principal</b>\n\n¿Que quieres hacer?",
+    await update.effective_message.reply_text("📊 <b>Panel Principal</b>\n\n¿Que quieres hacer?",
                                      reply_markup=multi_kb(MENU_ITEMS,"menu",cols=2), parse_mode=ParseMode.HTML)
 
 async def handle_menu_callback(update,ctx):
@@ -843,53 +843,53 @@ async def handle_menu_callback(update,ctx):
 
 async def cmd_cancel(update,ctx):
     db=await get_db(); await clear_session(db,update.effective_user.id)
-    await update.message.reply_text("✅ Operacion cancelada.", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("✅ Operacion cancelada.", parse_mode=ParseMode.HTML)
 
 async def cmd_cuentas(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     accts=await get_accounts(db,uid)
-    if not accts: return await update.message.reply_text("No tienes cuentas. Usa /nuevacuenta para crear una.", parse_mode=ParseMode.HTML)
+    if not accts: return await update.effective_message.reply_text("No tienes cuentas. Usa /nuevacuenta para crear una.", parse_mode=ParseMode.HTML)
     rows=[]; total=0.0
     for a in accts:
         rows.append([a['name'],a['type'],f"€{a['balance']:.2f}"]); total+=a["balance"]
     tbl=unicode_table(["Cuenta","Tipo","Saldo"],rows)
-    await update.message.reply_text(f"💰 <b>Tus cuentas:</b>\n<pre>{h(tbl)}</pre>\n<b>Saldo total: €{h(f'{total:.2f}')}</b>", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"💰 <b>Tus cuentas:</b>\n<pre>{h(tbl)}</pre>\n<b>Saldo total: €{h(f'{total:.2f}')}</b>", parse_mode=ParseMode.HTML)
 
 async def cmd_nueva_cuenta(update,ctx):
     db=await get_db(); await save_session(db,update.effective_user.id,"waiting_account_name")
-    await update.message.reply_text("¿Cual es el nombre de la cuenta?\n(Ejemplos: Nomina, Ahorros, Cripto)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Cual es el nombre de la cuenta?\n(Ejemplos: Nomina, Ahorros, Cripto)\n\n/cancel para cancelar")
 
 async def cmd_borrar_cuenta(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     accts=await get_accounts(db,uid)
-    if not accts: return await update.message.reply_text("No tienes cuentas para eliminar.")
-    await update.message.reply_text("🗑 <b>Eliminar cuenta</b>\n\nSelecciona la cuenta a eliminar.\n⚠️ Se eliminaran tambien sus transacciones y recurrentes asociados.",
+    if not accts: return await update.effective_message.reply_text("No tienes cuentas para eliminar.")
+    await update.effective_message.reply_text("🗑 <b>Eliminar cuenta</b>\n\nSelecciona la cuenta a eliminar.\n⚠️ Se eliminaran tambien sus transacciones y recurrentes asociados.",
                                      reply_markup=_acct_kb(accts,"del_account"), parse_mode=ParseMode.HTML)
 
 async def cmd_gasto(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
-    if not await get_accounts(db,uid): return await update.message.reply_text("Debes crear una cuenta primero con /nuevacuenta")
+    if not await get_accounts(db,uid): return await update.effective_message.reply_text("Debes crear una cuenta primero con /nuevacuenta")
     await save_session(db,update.effective_user.id,"waiting_expense_amount")
-    await update.message.reply_text("¿Cuanto gastaste?\n(Formato: cantidad)\n\nEjemplos: 45.50, 100\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Cuanto gastaste?\n(Formato: cantidad)\n\nEjemplos: 45.50, 100\n\n/cancel para cancelar")
 
 async def cmd_ingreso(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
-    if not await get_accounts(db,uid): return await update.message.reply_text("Debes crear una cuenta primero con /nuevacuenta")
+    if not await get_accounts(db,uid): return await update.effective_message.reply_text("Debes crear una cuenta primero con /nuevacuenta")
     await save_session(db,update.effective_user.id,"waiting_income_amount")
-    await update.message.reply_text("¿Cuanto ingreso?\n(Formato: cantidad)\n\nEjemplos: 100, 2500.50\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Cuanto ingreso?\n(Formato: cantidad)\n\nEjemplos: 100, 2500.50\n\n/cancel para cancelar")
 
 async def cmd_traspaso(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     accts=await get_accounts(db,uid)
-    if len(accts)<2: return await update.message.reply_text("Necesitas al menos 2 cuentas para transferir. Crea otra con /nuevacuenta", parse_mode=ParseMode.HTML)
+    if len(accts)<2: return await update.effective_message.reply_text("Necesitas al menos 2 cuentas para transferir. Crea otra con /nuevacuenta", parse_mode=ParseMode.HTML)
     await save_session(db,tid,"waiting_transfer_from")
-    await update.message.reply_text("💱 <b>Transferencia</b>\n\nSelecciona la cuenta de ORIGEN:", reply_markup=_acct_kb(accts,"xfer_from",None), parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("💱 <b>Transferencia</b>\n\nSelecciona la cuenta de ORIGEN:", reply_markup=_acct_kb(accts,"xfer_from",None), parse_mode=ParseMode.HTML)
 
 async def cmd_deshacer(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM transactions WHERE user_id=? AND type IN ('GASTO','INGRESO','TRANSFERENCIA') ORDER BY id DESC LIMIT 10",(uid,))
     txs=await c.fetchall()
-    if not txs: return await update.message.reply_text("No hay movimientos recientes para deshacer.")
+    if not txs: return await update.effective_message.reply_text("No hay movimientos recientes para deshacer.")
     btns=[]
     for tx in txs:
         typetag="💸" if tx["type"]=="GASTO" else ("💰" if tx["type"]=="INGRESO" else "💱")
@@ -897,7 +897,7 @@ async def cmd_deshacer(update,ctx):
         label=f"{typetag} {datepart} | {tx['category']} | €{tx['amount']:.2f}"
         btns.append((label,f"undo_{tx['id']}"))
     btns.append(("Cancelar","cancel_action"))
-    await update.message.reply_text("↩️ <b>Deshacer movimiento</b>\n\nSelecciona el movimiento a deshacer (ultimos 10):", reply_markup=_kb(btns), parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("↩️ <b>Deshacer movimiento</b>\n\nSelecciona el movimiento a deshacer (ultimos 10):", reply_markup=_kb(btns), parse_mode=ParseMode.HTML)
 
 async def cmd_redondeo(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
@@ -913,34 +913,34 @@ async def cmd_redondeo(update,ctx):
         msg+="Estado: ❌ <b>DESACTIVADO</b>\n\n"
         msg+="El redondeo redondea cada gasto al euro superior y ahorra la diferencia automaticamente.\n\n"
     msg+="/redondeotoggle - Activar o desactivar\n/redondeocuenta - Cambiar cuenta destino"
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 async def cmd_redondeo_toggle(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     rup=await get_roundup(db,uid)
     if rup and rup["enabled"]:
         await db.execute("UPDATE roundup_config SET enabled=0 WHERE user_id=?",(uid,)); await db.commit()
-        await update.message.reply_text("🪙 Redondeo <b>DESACTIVADO</b>", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("🪙 Redondeo <b>DESACTIVADO</b>", parse_mode=ParseMode.HTML)
     else:
         accts=await get_accounts(db,uid)
-        if not accts: return await update.message.reply_text("Necesitas al menos una cuenta. Crea una con /nuevacuenta", parse_mode=ParseMode.HTML)
+        if not accts: return await update.effective_message.reply_text("Necesitas al menos una cuenta. Crea una con /nuevacuenta", parse_mode=ParseMode.HTML)
         if not rup: await db.execute("INSERT INTO roundup_config(user_id,enabled,account_id) VALUES(?,1,?)",(uid,accts[0]["id"]))
         else: await db.execute("UPDATE roundup_config SET enabled=1 WHERE user_id=?",(uid,))
         await db.commit()
-        await update.message.reply_text("🪙 Redondeo <b>ACTIVADO</b>\n\nCada gasto se redondeara al euro superior y la diferencia se ahorrara automaticamente.", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("🪙 Redondeo <b>ACTIVADO</b>\n\nCada gasto se redondeara al euro superior y la diferencia se ahorrara automaticamente.", parse_mode=ParseMode.HTML)
 
 async def cmd_redondeo_cuenta(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     accts=await get_accounts(db,uid)
-    if not accts: return await update.message.reply_text("Necesitas al menos una cuenta.")
+    if not accts: return await update.effective_message.reply_text("Necesitas al menos una cuenta.")
     await save_session(db,tid,"waiting_roundup_account")
-    await update.message.reply_text("🪙 <b>Cuenta destino del redondeo</b>\n\nSelecciona a que cuenta ira el dinero redondeado:", reply_markup=_acct_kb(accts,"roundup_acc",None), parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("🪙 <b>Cuenta destino del redondeo</b>\n\nSelecciona a que cuenta ira el dinero redondeado:", reply_markup=_acct_kb(accts,"roundup_acc",None), parse_mode=ParseMode.HTML)
 
 async def cmd_recurrente(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM recurring_expenses WHERE user_id=? ORDER BY next_date",(uid,))
     recs=await c.fetchall()
-    if not recs: return await update.message.reply_text("No tienes gastos recurrentes configurados.\n\n/agregarrecurrente - Agregar nuevo gasto", parse_mode=ParseMode.HTML)
+    if not recs: return await update.effective_message.reply_text("No tienes gastos recurrentes configurados.\n\n/agregarrecurrente - Agregar nuevo gasto", parse_mode=ParseMode.HTML)
     headers=["Nombre","Monto","Frecuencia","Proximo","ID"]
     rows=[]; total=0.0
     for r in recs:
@@ -950,20 +950,20 @@ async def cmd_recurrente(update,ctx):
     tbl=unicode_table(headers,rows)
     msg=f"📅 <b>Gastos recurrentes:</b>\n<pre>{h(tbl)}</pre>\n<b>Total estimado mensual: €{h(f'{total:.2f}')}</b>\n\n"
     msg+="¿Que deseas hacer?\n/agregarrecurrente - Agregar nuevo gasto\n/borrarrecurrente - Eliminar gasto\n/cancel - Cancelar"
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
     await save_session(db,update.effective_user.id,"menu_recurrente")
 
 async def cmd_agregar_recurrente(update,ctx):
     db=await get_db(); await save_session(db,update.effective_user.id,"waiting_recurring_name")
-    await update.message.reply_text("¿Cual es el nombre del gasto recurrente?\n(Ejemplo: Netflix, Seguro del coche)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Cual es el nombre del gasto recurrente?\n(Ejemplo: Netflix, Seguro del coche)\n\n/cancel para cancelar")
 
 async def cmd_borrar_recurrente(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM recurring_expenses WHERE user_id=?",(uid,)); recs=await c.fetchall()
-    if not recs: return await update.message.reply_text("No tienes gastos recurrentes para eliminar.")
+    if not recs: return await update.effective_message.reply_text("No tienes gastos recurrentes para eliminar.")
     btns=[(f"{r['name']} — €{r['amount']:.2f} ({r['frequency']})",f"del_recurring_{r['id']}") for r in recs]
     btns.append(("Cancelar","cancel_action"))
-    await update.message.reply_text("Selecciona el gasto recurrente a eliminar:", reply_markup=_kb(btns))
+    await update.effective_message.reply_text("Selecciona el gasto recurrente a eliminar:", reply_markup=_kb(btns))
 
 async def cmd_resumen(update,ctx):
     return await finance_reports.cmd_resumen(update,ctx)
@@ -1041,7 +1041,7 @@ async def cmd_presupuesto(update,ctx):
     end=(now.replace(year=now.year+1,month=1,day=1)-timedelta(seconds=1) if now.month==12 else (now.replace(month=now.month+1,day=1)-timedelta(seconds=1)))
     c2=await db.execute("SELECT category,SUM(amount) as total FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=? GROUP BY category",(uid,start.isoformat(),end.isoformat()))
     spent={r["category"]:r["total"] for r in await c2.fetchall()}
-    if not budgets: return await update.message.reply_text("No tienes presupuestos configurados.\n\nUsa /presupuestoset para crear uno.",parse_mode=ParseMode.HTML)
+    if not budgets: return await update.effective_message.reply_text("No tienes presupuestos configurados.\n\nUsa /presupuestoset para crear uno.",parse_mode=ParseMode.HTML)
     msg=f"📊 <b>Presupuestos de {h(MONTHS_ES[now.month])} {h(str(now.year))}</b>\n\n"
     for b in budgets:
         s=spent.get(b["category"],0); pct=s/b["amount"]*100; bar_w=10
@@ -1050,12 +1050,12 @@ async def cmd_presupuesto(update,ctx):
         bud_amt = "{:.2f}".format(b["amount"]); spent_amt = "{:.2f}".format(s); pct_str = "{:.1f}".format(pct)
         msg+=f"{icon} {h(b['category'])}: €{h(spent_amt)}/{h(bud_amt)} {bar} {h(pct_str)}%\n"
     msg+="\n/presupuestoset - Crear o modificar presupuesto"
-    await update.message.reply_text(msg,parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg,parse_mode=ParseMode.HTML)
 
 async def cmd_presupuestoset(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     await save_session(db,tid,"waiting_budget_category")
-    await update.message.reply_text("Selecciona la categoria para el presupuesto:",reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"budcat",cols=2,extra=None))
+    await update.effective_message.reply_text("Selecciona la categoria para el presupuesto:",reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"budcat",cols=2,extra=None))
 
 async def handle_budget_callback(update,ctx):
     q=update.callback_query; await _safe_answer_callback(q)
@@ -1073,25 +1073,25 @@ async def handle_budget_callback(update,ctx):
 
 async def cmd_buscar(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
-    text=update.message.text.strip()
+    text=update.effective_message.text.strip()
     parts=text.split(" ",1)
     keyword=parts[1] if len(parts)>1 else ""
-    if not keyword: return await update.message.reply_text("Uso: /buscar &lt;palabra clave&gt;\n\nBusca en las descripciones de tus transacciones.",parse_mode=ParseMode.HTML)
+    if not keyword: return await update.effective_message.reply_text("Uso: /buscar &lt;palabra clave&gt;\n\nBusca en las descripciones de tus transacciones.",parse_mode=ParseMode.HTML)
     c=await db.execute("SELECT t.*,a.name as aname FROM transactions t JOIN accounts a ON t.account_id=a.id WHERE t.user_id=? AND t.description LIKE ? ORDER BY t.date DESC LIMIT 10",(uid,f"%{keyword}%"))
     txs=await c.fetchall()
-    if not txs: return await update.message.reply_text(f"No se encontraron transacciones para: {h(keyword)}",parse_mode=ParseMode.HTML)
+    if not txs: return await update.effective_message.reply_text(f"No se encontraron transacciones para: {h(keyword)}",parse_mode=ParseMode.HTML)
     msg=f"🔍 <b>Resultados para: {h(keyword)}</b>\n\n"
     for tx in txs:
         dt=tx["date"][:10] if tx["date"] else "—"; desc=tx["description"] or "—"
         tx_amt = "{:.2f}".format(tx["amount"])
         msg+=f"{'💸' if tx['type']=='GASTO' else ('💰' if tx['type']=='INGRESO' else '💱')} {dt} | {tx['category']} | €{h(tx_amt)} | {tx['aname']}\n  {desc}\n\n"
-    await update.message.reply_text(msg,parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg,parse_mode=ParseMode.HTML)
 
 async def cmd_metas(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM savings_goals WHERE user_id=? ORDER BY created_at",(uid,))
     goals=await c.fetchall()
-    if not goals: return await update.message.reply_text("No tienes metas de ahorro.\n\n/nuevameta - Crear nueva meta",parse_mode=ParseMode.HTML)
+    if not goals: return await update.effective_message.reply_text("No tienes metas de ahorro.\n\n/nuevameta - Crear nueva meta",parse_mode=ParseMode.HTML)
     msg="🎯 <b>Metas de Ahorro</b>\n\n"
     for g in goals:
         g_curr = "{:.2f}".format(g["current_amount"]); g_targ = "{:.2f}".format(g["target_amount"])
@@ -1100,26 +1100,26 @@ async def cmd_metas(update,ctx):
         deadline=f" - Vence: {g['deadline'][:10]}" if g["deadline"] else ""
         msg+=f"🎯 {h(g['name'])}: €{h(g_curr)}/{h(g_targ)} {bar} {h(f'{pct:.1f}')}%{deadline}\n\n"
     msg+="/nuevameta - Crear meta\n/aportarmeta - Aportar a meta"
-    await update.message.reply_text(msg,parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg,parse_mode=ParseMode.HTML)
 
 async def cmd_nuevameta(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     await save_session(db,tid,"waiting_goal_name")
-    await update.message.reply_text("¿Nombre de la meta?\n(Ejemplo: Viaje a Japon, Fondo de emergencia)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Nombre de la meta?\n(Ejemplo: Viaje a Japon, Fondo de emergencia)\n\n/cancel para cancelar")
 
 async def cmd_aportarmeta(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     c=await db.execute("SELECT * FROM savings_goals WHERE user_id=?",(uid,)); goals=await c.fetchall()
-    if not goals: return await update.message.reply_text("No tienes metas. Crea una con /nuevameta")
+    if not goals: return await update.effective_message.reply_text("No tienes metas. Crea una con /nuevameta")
     btns=[(f"{g['name']} (€{g['current_amount']:.2f}/{g['target_amount']:.2f})",f"aportar_goal_{g['id']}") for g in goals]
     btns.append(("Cancelar","cancel_action"))
-    await update.message.reply_text("Selecciona la meta a la que quieres aportar:",reply_markup=_kb(btns))
+    await update.effective_message.reply_text("Selecciona la meta a la que quieres aportar:",reply_markup=_kb(btns))
 
 async def cmd_ingresorecurrente(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM recurring_expenses WHERE user_id=? AND type='INGRESO' ORDER BY next_date",(uid,))
     recs=await c.fetchall()
-    if not recs: return await update.message.reply_text("No tienes ingresos recurrentes configurados.\n\n/agregaringresorecurrente - Agregar ingreso recurrente",parse_mode=ParseMode.HTML)
+    if not recs: return await update.effective_message.reply_text("No tienes ingresos recurrentes configurados.\n\n/agregaringresorecurrente - Agregar ingreso recurrente",parse_mode=ParseMode.HTML)
     headers=["Nombre","Monto","Frecuencia","Proximo","ID"]
     rows=[]; total=0.0
     for r in recs:
@@ -1129,15 +1129,15 @@ async def cmd_ingresorecurrente(update,ctx):
     tbl=unicode_table(headers,rows)
     msg=f"💰 <b>Ingresos recurrentes:</b>\n<pre>{h(tbl)}</pre>\n<b>Total estimado mensual: €{h(f'{total:.2f}')}</b>\n\n"
     msg+="/agregaringresorecurrente - Agregar ingreso recurrente\n/cancel - Cancelar"
-    await update.message.reply_text(msg,parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg,parse_mode=ParseMode.HTML)
 
 async def cmd_agregaringresorecurrente(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     accts = await get_accounts(db, uid)
     if not accts:
-        return await update.message.reply_text("Crea una cuenta primero con /nuevacuenta")
+        return await update.effective_message.reply_text("Crea una cuenta primero con /nuevacuenta")
     await save_session(db,tid,"waiting_recurring_income_name")
-    await update.message.reply_text("¿Nombre del ingreso recurrente?\n(Ejemplo: Nomina, Renta, Dividendo)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text("¿Nombre del ingreso recurrente?\n(Ejemplo: Nomina, Renta, Dividendo)\n\n/cancel para cancelar")
 
 async def cmd_tendencia(update,ctx):
     return await finance_reports.cmd_tendencia(update,ctx)
@@ -1172,26 +1172,26 @@ async def cmd_alertas(update,ctx):
             msg+=f"{'✅' if a['enabled'] else '❌'} {h(a['name'])}: €{h(th_val)}\n"
     else: msg+="No tienes alertas configuradas.\n"
     msg+="\nOpciones:\n/agregaralerta - Agregar nueva alerta\n/borraralerta - Eliminar alerta\n/cancel - Cancelar"
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 async def cmd_agregar_alerta(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     accts=await get_accounts(db,uid)
-    if not accts: return await update.message.reply_text("No tienes cuentas. Crea una primero con /nuevacuenta", parse_mode=ParseMode.HTML)
+    if not accts: return await update.effective_message.reply_text("No tienes cuentas. Crea una primero con /nuevacuenta", parse_mode=ParseMode.HTML)
     await save_session(db,tid,"waiting_alert_account",{"accounts":[{"id":a["id"],"name":a["name"]} for a in accts]})
-    await update.message.reply_text("Selecciona la cuenta:", reply_markup=_acct_kb(accts,"alert_acc",None))
+    await update.effective_message.reply_text("Selecciona la cuenta:", reply_markup=_acct_kb(accts,"alert_acc",None))
 
 async def cmd_borrar_alerta(update,ctx):
     db=await get_db(); tid=update.effective_user.id
     c=await db.execute("SELECT la.*,a.name FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.telegram_id=?",(tid,))
     alerts=await c.fetchall()
-    if not alerts: return await update.message.reply_text("No tienes alertas para eliminar.")
+    if not alerts: return await update.effective_message.reply_text("No tienes alertas para eliminar.")
     btns=[(f"{a['name']} — €{a['threshold']:.2f}",f"del_alert_{a['id']}") for a in alerts]
     btns.append(("Cancelar","cancel_action"))
-    await update.message.reply_text("Selecciona la alerta a eliminar:", reply_markup=_kb(btns))
+    await update.effective_message.reply_text("Selecciona la alerta a eliminar:", reply_markup=_kb(btns))
 
 async def cmd_reset(update,ctx):
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "⚠️ <b>ATENCION</b>\n\nEsto borrara TODOS tus datos:\n• Cuentas\n• Transacciones\n• Gastos recurrentes\n• Alertas\n• Redondeo\n\nEsta accion NO se puede deshacer.\n\n¿Confirmas?",
         reply_markup=_kb([("✅ Si, borrar TODO","reset_confirm"),("❌ Cancelar","cancel_action")]), parse_mode=ParseMode.HTML)
 
@@ -1430,10 +1430,10 @@ async def _finalize_expense_with_note(db, tid, uid, sdata, note, update):
     exp_date = sdata.get("expenseDate", datetime.now().isoformat())
     acc = await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
     if not acc:
-        await update.message.reply_text("Cuenta no encontrada.")
+        await update.effective_message.reply_text("Cuenta no encontrada.")
         return
     if acc["balance"] < amt:
-        await update.message.reply_text("❌ Saldo insuficiente en esta cuenta.")
+        await update.effective_message.reply_text("❌ Saldo insuficiente en esta cuenta.")
         return
     ops = [(
         "INSERT INTO transactions(user_id,account_id,amount,type,category,date,description) VALUES(?,?,?,'GASTO',?,?,?)",
@@ -1454,13 +1454,13 @@ async def _finalize_expense_with_note(db, tid, uid, sdata, note, update):
             da = await (await db.execute("SELECT name FROM accounts WHERE id=?",(rup["account_id"],))).fetchone()
             await clear_session(db, tid)
             label = f"\n🏷️ {h(note)}" if note else ""
-            await update.message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}\n\n🪙 Redondeo: +€{h(f'{diff:.2f}')} → {h(da['name'])}", parse_mode=ParseMode.HTML)
+            await update.effective_message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}\n\n🪙 Redondeo: +€{h(f'{diff:.2f}')} → {h(da['name'])}", parse_mode=ParseMode.HTML)
             await _check_budget_warning(db, uid, cat, update)
             return
     await _tx_wrap(db, ops)
     await clear_session(db, tid)
     label = f"\n🏷️ {h(note)}" if note else ""
-    await update.message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
     await _check_budget_warning(db, uid, cat, update)
 
 async def _finalize_income_with_note(db, tid, uid, sdata, note, update):
@@ -1469,7 +1469,7 @@ async def _finalize_income_with_note(db, tid, uid, sdata, note, update):
     conc = sdata["incomeConcept"]
     acc = await (await db.execute("SELECT * FROM accounts WHERE id=? AND user_id=?",(aid,uid))).fetchone()
     if not acc:
-        await update.message.reply_text("Cuenta no encontrada.")
+        await update.effective_message.reply_text("Cuenta no encontrada.")
         return
     await _tx_wrap(db,[
         ("INSERT INTO transactions(user_id,account_id,amount,type,category,description) VALUES(?,?,?,'INGRESO',?,?)",(uid,aid,amt,conc,note or "")),
@@ -1477,7 +1477,7 @@ async def _finalize_income_with_note(db, tid, uid, sdata, note, update):
     ])
     await clear_session(db, tid)
     label = f"\n🏷️ {h(note)}" if note else ""
-    await update.message.reply_text(f"✅ Ingreso registrado\n💰 €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Ingreso registrado\n💰 €{h(f'{amt:.2f}')}\n📝 {h(conc)}\n💼 {h(acc['name'])}{label}", parse_mode=ParseMode.HTML)
 
 async def _hfc_rec_freq(db,tid,uid,sdata,d,q,update,ctx):
     key = _cb_suffix_text(d, "freq_")
@@ -1567,45 +1567,45 @@ async def handle_flow_callback(update,ctx):
 
 async def _ht_acct_name(db,tid,uid,text,sdata,update,ctx):
     sdata["accountName"]=text; await save_session(db,tid,"waiting_account_type",sdata)
-    await update.message.reply_text("Selecciona el tipo de cuenta:", reply_markup=multi_kb(TYPE_KBD_ITEMS,"type",cols=4,extra=None))
+    await update.effective_message.reply_text("Selecciona el tipo de cuenta:", reply_markup=multi_kb(TYPE_KBD_ITEMS,"type",cols=4,extra=None))
 
 async def _ht_acct_balance(db,tid,uid,text,sdata,update,ctx):
     bal=parse_amount(text)
-    if bal is None: return await update.message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    if bal is None: return await update.effective_message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
     try:
         await db.execute("INSERT INTO accounts(user_id,name,type,balance) VALUES(?,?,?,?)",(uid,sdata["accountName"],sdata["accountType"],bal))
         await db.commit(); await clear_session(db,tid)
-        await update.message.reply_text(f"✅ Cuenta <b>{h(sdata['accountName'])}</b> creada correctamente con saldo €{h(f'{bal:.2f}')}", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text(f"✅ Cuenta <b>{h(sdata['accountName'])}</b> creada correctamente con saldo €{h(f'{bal:.2f}')}", parse_mode=ParseMode.HTML)
     except FinanceDBIntegrityError:
-        await clear_session(db,tid); await update.message.reply_text("Error al crear la cuenta. Probablemente ya existe una con ese nombre.", parse_mode=ParseMode.HTML)
+        await clear_session(db,tid); await update.effective_message.reply_text("Error al crear la cuenta. Probablemente ya existe una con ese nombre.", parse_mode=ParseMode.HTML)
 
 async def _ht_expense_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
-    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["expenseAmount"]=amt
     await save_session(db,tid,"waiting_expense_category",sdata)
-    await update.message.reply_text(f"Gasto: €{h(f'{amt:.2f}')}\n\nSelecciona la categoria:", reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"cat",cols=2,extra=None))
+    await update.effective_message.reply_text(f"Gasto: €{h(f'{amt:.2f}')}\n\nSelecciona la categoria:", reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"cat",cols=2,extra=None))
 
 async def _ht_expense_date_custom(db,tid,uid,text,sdata,update,ctx):
     try: dt=datetime.strptime(text,"%d/%m/%Y"); sdata["expenseDate"]=dt.isoformat()
-    except ValueError: return await update.message.reply_text("Formato invalido. Usa DD/MM/AAAA.\n\n/cancel para cancelar")
+    except ValueError: return await update.effective_message.reply_text("Formato invalido. Usa DD/MM/AAAA.\n\n/cancel para cancelar")
     accts=await get_accounts(db,uid); await save_session(db,tid,"waiting_expense_account",sdata)
     exp_amt_c="{:.2f}".format(sdata.get('expenseAmount',0))
-    await update.message.reply_text(f"Gasto: €{h(exp_amt_c)} en {h(sdata.get('expenseCategory',''))}\n\nSelecciona la cuenta:",reply_markup=_acct_kb(accts,"exp_acc",None))
+    await update.effective_message.reply_text(f"Gasto: €{h(exp_amt_c)} en {h(sdata.get('expenseCategory',''))}\n\nSelecciona la cuenta:",reply_markup=_acct_kb(accts,"exp_acc",None))
 
 async def _ht_income_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
-    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["incomeAmount"]=amt; await save_session(db,tid,"waiting_income_concept",sdata)
-    await update.message.reply_text(f"Ingreso: €{h(f'{amt:.2f}')}\n\n¿Cual es el concepto?\n(Ejemplo: Freelance, Regalo, Bonificacion)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Ingreso: €{h(f'{amt:.2f}')}\n\n¿Cual es el concepto?\n(Ejemplo: Freelance, Regalo, Bonificacion)\n\n/cancel para cancelar")
 
 async def _ht_income_concept(db,tid,uid,text,sdata,update,ctx):
     sdata["incomeConcept"]=text; accts=await get_accounts(db,uid)
     await save_session(db,tid,"waiting_income_account",sdata)
     inc_amt="{:.2f}".format(sdata.get('incomeAmount',0))
-    await update.message.reply_text(f"Ingreso: €{h(inc_amt)}\nConcepto: {h(text)}\n\nSelecciona la cuenta donde ingresa el dinero:",reply_markup=_acct_kb(accts,"inc_acc",None))
+    await update.effective_message.reply_text(f"Ingreso: €{h(inc_amt)}\nConcepto: {h(text)}\n\nSelecciona la cuenta donde ingresa el dinero:",reply_markup=_acct_kb(accts,"inc_acc",None))
 
 async def _ht_expense_note(db,tid,uid,text,sdata,update,ctx):
     if text == "/saltar":
@@ -1623,116 +1623,116 @@ async def _ht_income_note(db,tid,uid,text,sdata,update,ctx):
 
 async def _ht_transfer_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida.")
-    if amt<=0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida.")
+    if amt<=0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     fid=sdata["from_id"]; tid_dst=sdata["to_id"]
     src=await (await db.execute("SELECT * FROM accounts WHERE id=?",(fid,))).fetchone()
     dst=await (await db.execute("SELECT * FROM accounts WHERE id=?",(tid_dst,))).fetchone()
     if src["balance"]<amt:
         bal_val="{:.2f}".format(src["balance"])
-        return await update.message.reply_text(f"❌ Saldo insuficiente en <b>{h(src['name'])}</b> (€{h(bal_val)})",parse_mode=ParseMode.HTML)
+        return await update.effective_message.reply_text(f"❌ Saldo insuficiente en <b>{h(src['name'])}</b> (€{h(bal_val)})",parse_mode=ParseMode.HTML)
     await _tx_wrap(db,[
         ("UPDATE accounts SET balance=balance-? WHERE id=?",(amt,fid)),
         ("UPDATE accounts SET balance=balance+? WHERE id=?",(amt,tid_dst)),
         ("INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Transferencia',?,?)",(uid,fid,amt,f"Transferencia a {dst['name']}",tid_dst)),
     ])
     await clear_session(db,tid)
-    await update.message.reply_text(f"✅ Transferencia realizada\n💱 €{h(f'{amt:.2f}')}\n📤 {h(src['name'])} → 📥 {h(dst['name'])}",parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Transferencia realizada\n💱 €{h(f'{amt:.2f}')}\n📤 {h(src['name'])} → 📥 {h(dst['name'])}",parse_mode=ParseMode.HTML)
 
 async def _ht_recurring_name(db,tid,uid,text,sdata,update,ctx):
     sdata["recurringName"]=text; await save_session(db,tid,"waiting_recurring_amount",sdata)
-    await update.message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
 
 async def _ht_recurring_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida.")
-    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida.")
+    if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     sdata["recurringAmount"]=amt; await save_session(db,tid,"waiting_recurring_frequency",sdata)
-    await update.message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None))
+    await update.effective_message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None))
 
 async def _ht_recurring_income_name(db,tid,uid,text,sdata,update,ctx):
     sdata["recurringIncomeName"] = text
     await save_session(db,tid,"waiting_recurring_income_amount",sdata)
-    await update.message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
 
 async def _ht_recurring_income_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida.")
-    if amt <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida.")
+    if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     sdata["recurringIncomeAmount"] = amt
     await save_session(db,tid,"waiting_recurring_income_frequency",sdata)
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         f"Ingreso recurrente: {h(sdata.get('recurringIncomeName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",
         reply_markup=multi_kb(FREQ_KBD_ITEMS,"freqinc",cols=2,extra=None)
     )
 
 async def _ht_alert_threshold(db,tid,uid,text,sdata,update,ctx):
     th=parse_amount(text)
-    if th is None: return await update.message.reply_text("Cantidad invalida.")
-    if th <= 0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    if th is None: return await update.effective_message.reply_text("Cantidad invalida.")
+    if th <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     await db.execute("INSERT OR REPLACE INTO low_balance_alerts(telegram_id,account_id,threshold,enabled) VALUES(?,?,?,1)",(tid,sdata["account_id"],th))
     await db.commit(); await clear_session(db,tid)
-    await update.message.reply_text(f"✅ Alerta configurada\n🔔 Se te notificara cuando el saldo sea menor a €{h(f'{th:.2f}')}", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Alerta configurada\n🔔 Se te notificara cuando el saldo sea menor a €{h(f'{th:.2f}')}", parse_mode=ParseMode.HTML)
 
 async def _ht_budget_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None: return await update.message.reply_text("Cantidad invalida.")
-    if amt<=0: return await update.message.reply_text("La cantidad debe ser positiva.")
+    if amt is None: return await update.effective_message.reply_text("Cantidad invalida.")
+    if amt<=0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     cat_key=sdata["budgetCategory"]; cat_name=CATEGORY_MAP[cat_key]
     now=datetime.now(); month=f"{now.year}-{now.month:02d}"
     await db.execute("INSERT OR REPLACE INTO budgets(user_id,category,amount,month) VALUES(?,?,?,?)",(uid,cat_name,amt,month))
     await db.commit(); await clear_session(db,tid)
-    await update.message.reply_text(f"✅ Presupuesto configurado\n📊 {h(cat_name)}: €{h(f'{amt:.2f}')} para {h(MONTHS_ES[now.month])} {h(str(now.year))}", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Presupuesto configurado\n📊 {h(cat_name)}: €{h(f'{amt:.2f}')} para {h(MONTHS_ES[now.month])} {h(str(now.year))}", parse_mode=ParseMode.HTML)
 
 async def _ht_goal_name(db,tid,uid,text,sdata,update,ctx):
     sdata["goalName"]=text; await save_session(db,tid,"waiting_goal_target",sdata)
-    await update.message.reply_text(f"Meta: {h(text)}\n\n¿Cual es el monto objetivo?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Meta: {h(text)}\n\n¿Cual es el monto objetivo?\n(Formato: cantidad)\n\n/cancel para cancelar")
 
 async def _ht_goal_target(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None or amt<=0: return await update.message.reply_text("Cantidad invalida. Debe ser positiva.")
+    if amt is None or amt<=0: return await update.effective_message.reply_text("Cantidad invalida. Debe ser positiva.")
     sdata["goalTarget"]=amt; await save_session(db,tid,"waiting_goal_deadline",sdata)
-    await update.message.reply_text(f"Meta: {h(sdata.get('goalName',''))} — Objetivo: €{h(f'{amt:.2f}')}\n\n¿Fecha limite? (DD/MM/AAAA o /saltar si no hay)",parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"Meta: {h(sdata.get('goalName',''))} — Objetivo: €{h(f'{amt:.2f}')}\n\n¿Fecha limite? (DD/MM/AAAA o /saltar si no hay)",parse_mode=ParseMode.HTML)
 
 async def _ht_goal_deadline(db,tid,uid,text,sdata,update,ctx):
     dl=None
     if text!="/saltar":
         try: dl=datetime.strptime(text,"%d/%m/%Y").isoformat()
-        except ValueError: return await update.message.reply_text("Formato invalido. Usa DD/MM/AAAA o /saltar")
+        except ValueError: return await update.effective_message.reply_text("Formato invalido. Usa DD/MM/AAAA o /saltar")
     await db.execute("INSERT INTO savings_goals(user_id,name,target_amount,deadline) VALUES(?,?,?,?)",(uid,sdata["goalName"],sdata["goalTarget"],dl))
     await db.commit(); await clear_session(db,tid)
     gt_amt="{:.2f}".format(sdata["goalTarget"])
-    await update.message.reply_text(f"✅ Meta creada\n🎯 {h(sdata['goalName'])}: €{h(gt_amt)}",parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Meta creada\n🎯 {h(sdata['goalName'])}: €{h(gt_amt)}",parse_mode=ParseMode.HTML)
 
 async def _ht_aportar_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
-    if amt is None or amt<=0: return await update.message.reply_text("Cantidad invalida.")
+    if amt is None or amt<=0: return await update.effective_message.reply_text("Cantidad invalida.")
     gid=sdata["goalId"]
     await db.execute("UPDATE savings_goals SET current_amount=current_amount+? WHERE id=? AND user_id=?",(amt,gid,uid))
     await db.commit(); await clear_session(db,tid)
-    await update.message.reply_text(f"✅ Aporte registrado\n🎯 +€{h(f'{amt:.2f}')} a tu meta",parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"✅ Aporte registrado\n🎯 +€{h(f'{amt:.2f}')} a tu meta",parse_mode=ParseMode.HTML)
 
 async def _ht_menu_recurrente(db,tid,uid,text,sdata,update,ctx):
     if text=="/agregarrecurrente":
         await save_session(db,tid,"waiting_recurring_name")
-        await update.message.reply_text("¿Cual es el nombre del gasto recurrente?\n(Ejemplo: Netflix, Seguro del coche)\n\n/cancel para cancelar")
+        await update.effective_message.reply_text("¿Cual es el nombre del gasto recurrente?\n(Ejemplo: Netflix, Seguro del coche)\n\n/cancel para cancelar")
 
 async def _ht_menu_alertas(db,tid,uid,text,sdata,update,ctx):
     if text=="/agregaralerta":
         accts=await get_accounts(db,uid)
-        if not accts: return await update.message.reply_text("Crea una cuenta primero con /nuevacuenta")
-        await update.message.reply_text("Selecciona la cuenta:", reply_markup=_acct_kb(accts,"alert_acc",None))
+        if not accts: return await update.effective_message.reply_text("Crea una cuenta primero con /nuevacuenta")
+        await update.effective_message.reply_text("Selecciona la cuenta:", reply_markup=_acct_kb(accts,"alert_acc",None))
     elif text=="/borraralerta":
         c=await db.execute("SELECT la.*,a.name FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.telegram_id=?",(tid,))
         alerts=await c.fetchall()
-        if not alerts: return await update.message.reply_text("No tienes alertas para eliminar.")
+        if not alerts: return await update.effective_message.reply_text("No tienes alertas para eliminar.")
         btns=[(f"{a['name']} — €{a['threshold']:.2f}",f"del_alert_{a['id']}") for a in alerts]
         btns.append(("Cancelar","cancel_action"))
-        await update.message.reply_text("Selecciona la alerta a eliminar:", reply_markup=_kb(btns))
+        await update.effective_message.reply_text("Selecciona la alerta a eliminar:", reply_markup=_kb(btns))
 
 async def _ht_menu_ingresorec(db,tid,uid,text,sdata,update,ctx):
     await clear_session(db,tid)
-    await update.message.reply_text("Usa /agregaringresorecurrente para agregar un ingreso recurrente.",parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("Usa /agregaringresorecurrente para agregar un ingreso recurrente.",parse_mode=ParseMode.HTML)
 
 _TEXT_HANDLERS = {
     "waiting_account_name": _ht_acct_name,
@@ -1760,16 +1760,16 @@ _TEXT_HANDLERS = {
 }
 
 async def handle_text(update,ctx):
-    db=await get_db(); tid=update.effective_user.id; text=update.message.text.strip()
+    db=await get_db(); tid=update.effective_user.id; text=update.effective_message.text.strip()
     s=await get_session(db,tid)
     if await _check_session_expiry(db,tid):
-        return await update.message.reply_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
-    if not s: return await update.message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")
+        return await update.effective_message.reply_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
+    if not s: return await update.effective_message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")
     uid=await get_or_create_user(db,tid); state=s["state"]
     sdata=json.loads(s["data"]) if s["data"] else {}
     handler=_TEXT_HANDLERS.get(state)
     if handler: return await handler(db,tid,uid,text,sdata,update,ctx)
-    await update.message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")
+    await update.effective_message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")
 
 # ── FLASK APP ────────────────────────────────────────────────────────
 app = Flask(__name__)
