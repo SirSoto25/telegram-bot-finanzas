@@ -1761,6 +1761,9 @@ _TEXT_HANDLERS = {
 
 async def handle_text(update,ctx):
     db=await get_db(); tid=update.effective_user.id; text=update.effective_message.text.strip()
+    if text.startswith("/cancel"):
+        await clear_session(db,tid)
+        return await update.effective_message.reply_text("✅ Operacion cancelada.", parse_mode=ParseMode.HTML)
     s=await get_session(db,tid)
     if await _check_session_expiry(db,tid):
         return await update.effective_message.reply_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
