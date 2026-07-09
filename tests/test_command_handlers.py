@@ -61,17 +61,17 @@ class CommandHandlersTests(unittest.TestCase):
         if accounts is not None:
             db.set_select("SELECT * FROM accounts", rows=accounts)
         with (
-            patch("bot_pythonanywhere.get_db", return_value=db),
-            patch("bot_pythonanywhere.get_or_create_user", return_value=1),
-            patch("bot_pythonanywhere.get_accounts", return_value=accounts or []),
-            patch("bot_pythonanywhere.save_session", AsyncMock()),
-            patch("bot_pythonanywhere.clear_session", AsyncMock()),
+            patch("commands.get_db", return_value=db),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.get_accounts", return_value=accounts or []),
+            patch("commands.save_session", AsyncMock()),
+            patch("commands.clear_session", AsyncMock()),
         ):
             asyncio.run(handler(update, None))
         return db, update
 
     def test_cuentas_no_accounts(self):
-        from bot_pythonanywhere import cmd_cuentas
+        from commands import cmd_cuentas
         update = _make_update()
         _, update = self._call(cmd_cuentas, update, accounts=[])
         msgs = update.effective_message.messages
@@ -80,7 +80,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertEqual(msgs[0]["parse_mode"], ParseMode.HTML)
 
     def test_cuentas_with_accounts(self):
-        from bot_pythonanywhere import cmd_cuentas
+        from commands import cmd_cuentas
         accounts = [
             {"name": "Nomina", "type": "NOMINA", "balance": 1500.0},
             {"name": "Ahorros", "type": "AHORROS", "balance": 500.0},
@@ -93,7 +93,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("2000.00", msgs[0]["text"])
 
     def test_gasto_no_accounts(self):
-        from bot_pythonanywhere import cmd_gasto
+        from commands import cmd_gasto
         update = _make_update()
         _, update = self._call(cmd_gasto, update, accounts=[])
         msgs = update.effective_message.messages
@@ -101,7 +101,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("crear una cuenta", msgs[0]["text"])
 
     def test_gasto_starts_flow(self):
-        from bot_pythonanywhere import cmd_gasto
+        from commands import cmd_gasto
         accounts = [{"name": "Nomina", "type": "NOMINA", "balance": 1500.0}]
         update = _make_update()
         _, update = self._call(cmd_gasto, update, accounts=accounts)
@@ -110,7 +110,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("gastaste", msgs[0]["text"])
 
     def test_ingreso_no_accounts(self):
-        from bot_pythonanywhere import cmd_ingreso
+        from commands import cmd_ingreso
         update = _make_update()
         _, update = self._call(cmd_ingreso, update, accounts=[])
         msgs = update.effective_message.messages
@@ -118,7 +118,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("crear una cuenta", msgs[0]["text"])
 
     def test_ingreso_starts_flow(self):
-        from bot_pythonanywhere import cmd_ingreso
+        from commands import cmd_ingreso
         accounts = [{"name": "Nomina", "type": "NOMINA", "balance": 1500.0}]
         update = _make_update()
         _, update = self._call(cmd_ingreso, update, accounts=accounts)
@@ -127,7 +127,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("ingreso", msgs[0]["text"])
 
     def test_traspaso_insufficient(self):
-        from bot_pythonanywhere import cmd_traspaso
+        from commands import cmd_traspaso
         accounts = [{"name": "Nomina", "type": "NOMINA", "balance": 1500.0, "id": 1}]
         update = _make_update()
         _, update = self._call(cmd_traspaso, update, accounts=accounts)
@@ -136,7 +136,7 @@ class CommandHandlersTests(unittest.TestCase):
         self.assertIn("menos 2 cuentas", msgs[0]["text"])
 
     def test_traspaso_shows_selection(self):
-        from bot_pythonanywhere import cmd_traspaso
+        from commands import cmd_traspaso
         accounts = [
             {"name": "Nomina", "type": "NOMINA", "balance": 1500.0, "id": 1},
             {"name": "Ahorros", "type": "AHORROS", "balance": 500.0, "id": 2},
