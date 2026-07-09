@@ -208,11 +208,11 @@ class SupabaseDB:
         parts = re.split(r"\s+AND\s+", where_text, flags=re.I)
         for part in parts:
             part = part.strip()
-            m = re.match(r"(\w+)\.(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\))", part, re.I)
+            m = re.match(r"(\w+)\.(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\)|true|false|\d+)", part, re.I)
             if m:
                 conds.append((m.group(2), m.group(3).lower(), m.group(4), part))
                 continue
-            m = re.match(r"(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\))", part, re.I)
+            m = re.match(r"(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\)|true|false|\d+)", part, re.I)
             if m:
                 conds.append((m.group(1), m.group(2).lower(), m.group(3), part))
                 continue
@@ -244,6 +244,10 @@ class SupabaseDB:
                     p_idx += 1
                 elif val.startswith("'") and val.endswith("'"):
                     result["filters"].append(("neq" if op in ("!=", "<>") else "eq", col, val.strip("'")))
+                elif val.lower() in ("true", "false"):
+                    result["filters"].append(("neq" if op in ("!=", "<>") else "eq", col, val.lower() == "true"))
+                elif val.isdigit():
+                    result["filters"].append(("neq" if op in ("!=", "<>") else "eq", col, int(val)))
                 elif val.startswith("("):
                     cleaned = [v.strip().strip("'") for v in val[1:-1].split(",")]
                     result["filters"].append((mapped_op, col, cleaned))
