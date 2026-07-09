@@ -44,7 +44,7 @@ from finance_shared import (
     h,
     parse_amount,
 )
-from finance_db import _tx_wrap, get_db as finance_get_db, init_db as finance_init_db
+from finance_db import DBIntegrityError, _tx_wrap, get_db as finance_get_db, init_db as finance_init_db
 import finance_reports
 from handlers_registry import register_handlers
 from finance_state import (
@@ -1576,7 +1576,7 @@ async def _ht_acct_balance(db,tid,uid,text,sdata,update,ctx):
         await db.execute("INSERT INTO accounts(user_id,name,type,balance) VALUES(?,?,?,?)",(uid,sdata["accountName"],sdata["accountType"],bal))
         await db.commit(); await clear_session(db,tid)
         await update.effective_message.reply_text(f"✅ Cuenta <b>{h(sdata['accountName'])}</b> creada correctamente con saldo €{h(f'{bal:.2f}')}", parse_mode=ParseMode.HTML)
-    except FinanceDBIntegrityError:
+    except DBIntegrityError:
         await clear_session(db,tid); await update.effective_message.reply_text("Error al crear la cuenta. Probablemente ya existe una con ese nombre.", parse_mode=ParseMode.HTML)
 
 async def _ht_expense_amount(db,tid,uid,text,sdata,update,ctx):

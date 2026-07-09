@@ -48,7 +48,7 @@ async def cmd_resumen(update, ctx):
     )
     txs = await c.fetchall()
     if not txs:
-        return await update.message.reply_text(
+        return await update.effective_message.reply_text(
             f"<b>Resumen de {h(MONTHS_ES[now.month])} {h(str(now.year))}</b>\n\nNo hay transacciones este mes.",
             parse_mode=ParseMode.HTML,
         )
@@ -76,7 +76,7 @@ async def cmd_resumen(update, ctx):
     kb_rows.append([InlineKeyboardButton("💡 Recomendaciones", callback_data="resumen_rec_r")])
     kb_rows.append([InlineKeyboardButton("🔔 Alertas", callback_data="resumen_alerts_a")])
     await save_session(db, tid, "resumen_data", {"by_cat": by_cat, "ti": ti, "te": te, "uid": uid, "now_month": MONTHS_ES[now.month], "now_year": str(now.year)})
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_rows))
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_rows))
 
 
 async def cmd_stats(update, ctx):
@@ -91,7 +91,7 @@ async def cmd_stats(update, ctx):
         rate = (bal / d["income"] * 100) if d["income"] > 0 else 0.0
         rows.append([m, f"€{d['income']:.2f}", f"€{d['expense']:.2f}", f"€{bal:.2f}", f"{rate:.1f}%"])
     tbl = unicode_table(headers, rows)
-    await update.message.reply_text(f"📈 <b>Estadisticas ultimos 6 meses</b>\n<pre>{h(tbl)}</pre>", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"📈 <b>Estadisticas ultimos 6 meses</b>\n<pre>{h(tbl)}</pre>", parse_mode=ParseMode.HTML)
 
 
 async def cmd_tendencia(update, ctx):
@@ -101,8 +101,8 @@ async def cmd_tendencia(update, ctx):
     monthly = await get_monthly_tx(db, uid, 12)
     ed = [{"month": m, "amount": v["expense"]} for m, v in monthly.items()]
     id_data = [{"month": m, "amount": v["income"]} for m, v in monthly.items()]
-    await update.message.reply_text(f"<pre>{h(trend_chart(ed, 'Tendencia de gastos (12 meses)'))}</pre>", parse_mode=ParseMode.HTML)
-    await update.message.reply_text(f"<pre>{h(trend_chart(id_data, 'Tendencia de ingresos (12 meses)'))}</pre>", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"<pre>{h(trend_chart(ed, 'Tendencia de gastos (12 meses)'))}</pre>", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"<pre>{h(trend_chart(id_data, 'Tendencia de ingresos (12 meses)'))}</pre>", parse_mode=ParseMode.HTML)
     items = list(monthly.items())
     if len(items) >= 2:
         _, pv = items[-2]
@@ -111,7 +111,7 @@ async def cmd_tendencia(update, ctx):
         idiff = lv["income"] - pv["income"]
         ep = abs(ediff / pv["expense"] * 100) if pv["expense"] > 0 else 0
         ip = abs(idiff / pv["income"] * 100) if pv["income"] > 0 else 0
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"📊 <b>Analisis de Tendencia</b>\n\nGastos: {'📈' if ediff > 0 else '📉'} {h(f'{ep:.1f}')}%\nIngresos: {'📈' if idiff > 0 else '📉'} {h(f'{ip:.1f}')}%",
             parse_mode=ParseMode.HTML,
         )
@@ -123,7 +123,7 @@ async def cmd_panel(update, ctx):
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     snapshot = await _build_financial_snapshot(db, uid)
     anomalies = await _build_anomalies(db, uid)
-    await update.message.reply_text(_format_panel_text(snapshot, anomalies), parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(_format_panel_text(snapshot, anomalies), parse_mode=ParseMode.HTML)
 
 
 async def cmd_anomalias(update, ctx):
@@ -131,11 +131,11 @@ async def cmd_anomalias(update, ctx):
     uid = await get_or_create_user(db, update.effective_user.id)
     anomalies = await _build_anomalies(db, uid)
     if not anomalies:
-        return await update.message.reply_text("✅ No se detectaron anomalías de gasto este mes.")
+        return await update.effective_message.reply_text("✅ No se detectaron anomalías de gasto este mes.")
     msg = "⚠️ <b>Anomalías de gasto</b>\n\n"
     for cat, cur, avg_prev in anomalies:
         msg += f"• {h(cat)}: €{h(f'{cur:.2f}')} vs media de 3 meses €{h(f'{avg_prev:.2f}')}\n"
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 
 async def cmd_forecast(update, ctx):
@@ -149,7 +149,7 @@ async def cmd_forecast(update, ctx):
         f"Saldo actual total: €{h(f'{cash:.2f}')}\n"
         f"Proyección al cierre: €{h(f'{projected:.2f}')}\n"
     )
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 
 async def cmd_tags(update, ctx):
@@ -157,21 +157,21 @@ async def cmd_tags(update, ctx):
     uid = await get_or_create_user(db, update.effective_user.id)
     snapshot = await _build_financial_snapshot(db, uid)
     if not snapshot["tags"]:
-        return await update.message.reply_text("No hay etiquetas (#tag) en tus notas todavía.")
+        return await update.effective_message.reply_text("No hay etiquetas (#tag) en tus notas todavía.")
     msg = "🏷️ <b>Etiquetas detectadas</b>\n\n"
     for tag, count in sorted(snapshot["tags"].items(), key=lambda e: e[1], reverse=True):
         msg += f"• #{h(tag)}: {h(count)}\n"
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 
 async def cmd_sugerircategoria(update, ctx):
-    text = update.message.text.replace("/sugerircategoria", "", 1).strip()
+    text = update.effective_message.text.replace("/sugerircategoria", "", 1).strip()
     if not text:
-        return await update.message.reply_text("Uso: /sugerircategoria <texto>\n\nEjemplo: /sugerircategoria supermercado mercadona")
+        return await update.effective_message.reply_text("Uso: /sugerircategoria <texto>\n\nEjemplo: /sugerircategoria supermercado mercadona")
     category = _smart_category_suggestion(text)
     if not category:
-        return await update.message.reply_text("No pude inferir una categoría clara. Prueba con más contexto.")
-    await update.message.reply_text(f"💡 Sugerencia: <b>{h(category)}</b>", parse_mode=ParseMode.HTML)
+        return await update.effective_message.reply_text("No pude inferir una categoría clara. Prueba con más contexto.")
+    await update.effective_message.reply_text(f"💡 Sugerencia: <b>{h(category)}</b>", parse_mode=ParseMode.HTML)
 
 
 async def cmd_exportar(update, ctx):
@@ -184,8 +184,8 @@ async def cmd_exportar(update, ctx):
     )
     txs = await c.fetchall()
     if not txs:
-        return await update.message.reply_text("No hay transacciones para exportar.")
-    await update.message.reply_text("📥 Generando archivo CSV...", parse_mode=ParseMode.HTML)
+        return await update.effective_message.reply_text("No hay transacciones para exportar.")
+    await update.effective_message.reply_text("📥 Generando archivo CSV...", parse_mode=ParseMode.HTML)
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["Fecha", "Tipo", "Categoria", "Monto", "Cuenta", "Descripcion"])
@@ -194,4 +194,4 @@ async def cmd_exportar(update, ctx):
     out.seek(0)
     bio = io.BytesIO(out.getvalue().encode("utf-8"))
     bio.name = f"finanzas_{datetime.now().strftime('%d-%m-%Y')}.csv"
-    await update.message.reply_document(bio)
+    await update.effective_message.reply_document(bio)

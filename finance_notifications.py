@@ -43,7 +43,7 @@ async def _check_budget_warning(db, uid, category, update):
         bud_amt = "{:.2f}".format(b["amount"])
         spent_amt = "{:.2f}".format(spent)
         pct_str = "{:.1f}".format(pct)
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"⚠️ <b>Alerta de presupuesto</b>\n{category}: €{h(spent_amt)}/{h(bud_amt)} ({h(pct_str)}%)",
             parse_mode="HTML",
         )
