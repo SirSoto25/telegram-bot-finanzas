@@ -52,80 +52,72 @@ async def cmd_start(update:Update,ctx):
 
 
 async def cmd_help(update,ctx):
+    text = update.effective_message.text.strip()
+    cmd = text.replace("/help", "", 1).strip().lstrip("/")
+    if cmd:
+        help_map = {
+            "cuentas": "📋 <b>/cuentas</b>\nMuestra todas tus cuentas con sus saldos y el saldo total consolidado.",
+            "nuevacuenta": "➕ <b>/nuevacuenta</b>\nCrea una nueva cuenta. Te pedirá nombre, tipo y saldo inicial.\n\nTipos: NOMINA, AHORROS, INVERSION, CRIPTO",
+            "borrarcuenta": "🗑 <b>/borrarcuenta</b>\nElimina una cuenta y TODOS sus movimientos, recurrentes y alertas. Requiere confirmación.",
+            "gasto": "💸 <b>/gasto</b>\nRegistra un gasto. Flujo: cantidad → categoría → fecha (opcional) → cuenta → nota (opcional).",
+            "ingreso": "💰 <b>/ingreso</b>\nRegistra un ingreso. Flujo: cantidad → concepto → cuenta → nota (opcional).",
+            "traspaso": "💱 <b>/traspaso</b>\nTransfiere dinero entre dos cuentas propias. Necesitas al menos 2 cuentas.",
+            "deshacer": "↩️ <b>/deshacer</b>\nRevierte uno de los últimos 10 movimientos registrados.",
+            "buscar": "🔍 <b>/buscar &lt;texto&gt;</b>\nBusca transacciones por palabra clave en descripciones y notas.\n\nEjemplo: /buscar supermercado",
+            "resumen": "📊 <b>/resumen</b>\nResumen del mes actual: ingresos, gastos, balance, desglose por categoría con gráficos y recomendaciones.",
+            "stats": "📈 <b>/stats</b>\nTabla de estadísticas de los últimos 6 meses con % de ahorro mensual.",
+            "tendencia": "📉 <b>/tendencia</b>\nGráficos ASCII de tendencias de gastos e ingresos (12 meses).",
+            "panel": "🖥 <b>/panel</b>\nPanel financiero completo con snapshot actual, próximos recurrentes y anomalías.",
+            "forecast": "🔮 <b>/forecast</b>\nProyección del saldo al cierre del mes basada en el gasto diario promedio.",
+            "anomalias": "⚠️ <b>/anomalias</b>\nDetecta categorías con gasto anormalmente alto este mes vs media de los últimos 3 meses.",
+            "tags": "🏷️ <b>/tags</b>\nLista todas las etiquetas (#tag) usadas en notas, ordenadas por frecuencia.",
+            "exportar": "📥 <b>/exportar</b>\nDescarga un archivo CSV con todas tus transacciones.",
+            "presupuesto": "📋 <b>/presupuesto</b>\nMuestra presupuestos del mes con barras de progreso visuales.",
+            "presupuestoset": "⚙️ <b>/presupuestoset</b>\nCrea o modifica un presupuesto mensual para una categoría.",
+            "metas": "🎯 <b>/metas</b>\nLista tus metas de ahorro con barras de progreso.",
+            "nuevameta": "🆕 <b>/nuevameta</b>\nCrea una nueva meta de ahorro con nombre, objetivo y fecha límite opcional.",
+            "aportarmeta": "💪 <b>/aportarmeta</b>\nAporta dinero desde una cuenta a una meta de ahorro existente.",
+            "alertas": "🔔 <b>/alertas</b>\nGestiona alertas de saldo bajo en tus cuentas.",
+            "agregaralerta": "➕🔔 <b>/agregaralerta</b>\nCrea una alerta para cuando el saldo de una cuenta baje de un umbral.",
+            "recurrente": "🔁 <b>/recurrente</b>\nLista tus gastos recurrentes configurados.",
+            "agregarrecurrente": "➕🔁 <b>/agregarrecurrente</b>\nAñade un gasto recurrente (Netflix, alquiler, etc.) con frecuencia y categoría.",
+            "ingresorecurrente": "📥🔁 <b>/ingresorecurrente</b>\nLista tus ingresos recurrentes (nómina, rentas, etc.).",
+            "agregaringresorecurrente": "➕📥 <b>/agregaringresorecurrente</b>\nAñade un ingreso recurrente (nómina, renta, dividendo, etc.).",
+            "redondeo": "🪙 <b>/redondeo</b>\nMuestra el estado del redondeo automático: cada gasto se redondea al € superior y la diferencia se ahorra.",
+            "redondeotoggle": "🪙🔘 <b>/redondeotoggle</b>\nActiva o desactiva el redondeo automático.",
+            "redondeocuenta": "🪙💼 <b>/redondeocuenta</b>\nCambia la cuenta destino donde se acumula el dinero del redondeo.",
+            "sugerircategoria": "💡 <b>/sugerircategoria &lt;texto&gt;</b>\nSugiere una categoría basada en el texto.\n\nEjemplo: /sugerircategoria supermercado",
+            "reset": "⚠️ <b>/reset</b>\nBorra TODOS tus datos permanentemente. Requiere confirmación explícita.",
+            "menu": "🏠 <b>/menu</b>\nAbre el panel principal con 12 botones interactivos para todas las funciones.",
+            "cancel": "❌ <b>/cancel</b>\nCancela la operación en curso y limpia la sesión.",
+        }
+        msg = help_map.get(cmd, f"❓ Comando <b>/{cmd}</b> no encontrado.\nUsa /help para ver todos los comandos.")
+        return await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
+
     await update.effective_message.reply_text("""
-<b>📚 Guia Completa de Comandos</b>
+📚 <b>Guía de comandos</b> — usa <b>/help [comando]</b> para detalles
 
-<b>💼 GESTION DE CUENTAS</b>
-/cuentas - Ver todas tus cuentas y saldos
-/nuevacuenta - Crear una nueva cuenta
-/borrarcuenta - Eliminar una cuenta y sus movimientos
+<b>💼 Cuentas</b>
+/cuentas /nuevacuenta /borrarcuenta
 
-<b>💸 TRANSACCIONES</b>
-/gasto - Registrar un gasto
-/ingreso - Registrar un ingreso
-/traspaso - Transferir dinero entre cuentas
-/deshacer - Deshacer uno de los ultimos 10 movimientos
+<b>💸 Transacciones</b>
+/gasto /ingreso /traspaso /deshacer /buscar
 
-<b>🪙 REDONDEO AUTOMATICO</b>
-/redondeo - Ver y configurar el redondeo de gastos
-/redondeotoggle - Activar o desactivar el redondeo
-/redondeocuenta - Cambiar la cuenta destino del redondeo
+<b>📊 Reportes</b>
+/resumen /stats /tendencia /panel /forecast /anomalias /tags /exportar
 
-<b>📅 GASTOS RECURRENTES</b>
-/recurrente - Ver y gestionar gastos recurrentes
-/agregarrecurrente - Agregar nuevo gasto recurrente
-/borrarrecurrente - Eliminar un gasto recurrente
-/ingresorecurrente - Ver ingresos recurrentes
-/agregaringresorecurrente - Agregar nuevo ingreso recurrente
+<b>🎯 Presupuestos y metas</b>
+/presupuesto /presupuestoset /metas /nuevameta /aportarmeta
 
-<b>📊 REPORTES Y ANALISIS</b>
-/resumen - Resumen mensual con graficos y recomendaciones
-/stats - Estadisticas ultimos 6 meses
-/tendencia - Analisis de tendencias (12 meses)
-/panel - Panel financiero con forecast y anomalías
-/forecast - Proyección de fin de mes
-/anomalias - Anomalias de gasto detectadas
-/tags - Etiquetas detectadas desde notas
-/sugerircategoria - Sugiere una categoría a partir de texto
+<b>🔔 Alertas y recurrentes</b>
+/alertas /agregaralerta /borraralerta /recurrente /agregarrecurrente /borrarrecurrente
+/ingresorecurrente /agregaringresorecurrente
 
-<b>🔔 ALERTAS</b>
-/alertas - Gestionar alertas de saldo bajo
-/agregaralerta - Crear alerta de saldo bajo
-/borraralerta - Eliminar una alerta
+<b>🪙 Redondeo</b>
+/redondeo /redondeotoggle /redondeocuenta
 
-<b>📥 EXPORTAR DATOS</b>
-/exportar - Descargar todas tus transacciones en CSV
-
-<b>🏠 NAVEGACION</b>
-/menu - Panel principal
-/help - Esta guia
-/cancel - Cancelar operacion actual
-
-<b>📋 TIPOS DE CUENTA</b>
-• NOMINA - Cuenta corriente de nomina
-• AHORROS - Cuenta de ahorros
-• INVERSION - Fondos de inversion
-• CRIPTO - Billetera de criptomonedas
-
-<b>🏷️ CATEGORIAS DE GASTOS</b>
-• Comida / Transporte / Suscripciones
-• Coche / Entretenimiento / Vivienda
-• Utilidades / Otros
-
-<b>🗑 BORRADO</b>
-/borrarcuenta - Eliminar una cuenta
-/borrarrecurrente - Eliminar un gasto recurrente
-/deshacer - Deshacer un movimiento reciente
-/reset - ⚠️ Borrar TODOS los datos
-
-<b>💡 FUNCIONALIDADES AVANZADAS</b>
-✅ Graficos ASCII de gastos
-✅ Predicciones basadas en historico
-✅ Recomendaciones personalizadas de ahorro
-✅ Analisis de tendencias
-✅ Alertas automaticas de saldo bajo
-✅ Redondeo automatico de gastos
-✅ Exportacion de datos a CSV
+<b>⚙️ Otros</b>
+/start /menu /cancel /sugerircategoria /reset
 """, parse_mode=ParseMode.HTML)
 
 
