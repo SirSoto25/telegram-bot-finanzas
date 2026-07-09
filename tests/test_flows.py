@@ -71,19 +71,19 @@ class FlowStateMachineTests(unittest.TestCase):
                 "created_at": datetime.now().isoformat(),
             }
         with (
-            patch("bot_pythonanywhere.get_db", return_value=db),
-            patch("bot_pythonanywhere.get_or_create_user", return_value=1),
-            patch("bot_pythonanywhere.get_accounts", return_value=[]),
-            patch("bot_pythonanywhere.get_session", AsyncMock(return_value=session_row)),
-            patch("bot_pythonanywhere._check_session_expiry", AsyncMock(return_value=False)),
-            patch("bot_pythonanywhere.save_session", AsyncMock()),
-            patch("bot_pythonanywhere.clear_session", AsyncMock()),
+            patch("flows.get_db", return_value=db),
+            patch("flows.get_or_create_user", return_value=1),
+            patch("flows.get_accounts", return_value=[]),
+            patch("flows.get_session", AsyncMock(return_value=session_row)),
+            patch("flows._check_session_expiry", AsyncMock(return_value=False)),
+            patch("flows.save_session", AsyncMock()),
+            patch("flows.clear_session", AsyncMock()),
         ):
             asyncio.run(handler(update, None))
         return db, update
 
     def test_no_session_shows_prompt(self):
-        from bot_pythonanywhere import handle_text
+        from flows import handle_text
         update = _make_update(text="hello")
         _, update = self._call(handle_text, update, session_state=None)
         msgs = update.effective_message.messages
@@ -91,12 +91,12 @@ class FlowStateMachineTests(unittest.TestCase):
         self.assertIn("/start", msgs[0]["text"])
 
     def test_expired_session_shows_prompt(self):
-        from bot_pythonanywhere import handle_text
-        with patch("bot_pythonanywhere._check_session_expiry", AsyncMock(return_value=True)):
+        from flows import handle_text
+        with patch("flows._check_session_expiry", AsyncMock(return_value=True)):
             update = _make_update(text="hello")
             with (
-                patch("bot_pythonanywhere.get_db", return_value=_FakeDB()),
-                patch("bot_pythonanywhere.get_session", AsyncMock(return_value={"state": "x", "data": "{}", "created_at": "old"})),
+                patch("flows.get_db", return_value=_FakeDB()),
+                patch("flows.get_session", AsyncMock(return_value={"state": "x", "data": "{}", "created_at": "old"})),
             ):
                 asyncio.run(handle_text(update, None))
         msgs = update.effective_message.messages
@@ -104,13 +104,13 @@ class FlowStateMachineTests(unittest.TestCase):
         self.assertIn("expirada", msgs[0]["text"])
 
     def test_cancel_text_clears_session(self):
-        from bot_pythonanywhere import handle_text
+        from flows import handle_text
         db = _FakeDB()
         with (
-            patch("bot_pythonanywhere.get_db", return_value=db),
-            patch("bot_pythonanywhere.get_session", AsyncMock(return_value={"state": "waiting_expense_amount", "data": "{}", "created_at": datetime.now().isoformat()})),
-            patch("bot_pythonanywhere._check_session_expiry", AsyncMock(return_value=False)),
-            patch("bot_pythonanywhere.clear_session", AsyncMock()) as mock_clear,
+            patch("flows.get_db", return_value=db),
+            patch("flows.get_session", AsyncMock(return_value={"state": "waiting_expense_amount", "data": "{}", "created_at": datetime.now().isoformat()})),
+            patch("flows._check_session_expiry", AsyncMock(return_value=False)),
+            patch("flows.clear_session", AsyncMock()) as mock_clear,
         ):
             update = _make_update(text="/cancel")
             asyncio.run(handle_text(update, None))
@@ -118,7 +118,7 @@ class FlowStateMachineTests(unittest.TestCase):
         self.assertIn("cancelada", update.effective_message.messages[0]["text"])
 
     def test_unknown_state_shows_prompt(self):
-        from bot_pythonanywhere import handle_text
+        from flows import handle_text
         update = _make_update(text="any text")
         _, update = self._call(handle_text, update, session_state="nonexistent_state")
         msgs = update.effective_message.messages
