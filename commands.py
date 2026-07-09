@@ -23,7 +23,8 @@ from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_notifications import _check_budget_warning, _expense_ask_account, check_alerts
 from finance_analytics import (
     _build_anomalies, _build_financial_snapshot, _format_panel_text,
-    bar_chart, get_monthly_tx, get_net_worth_history, predict_expenses, savings_recs, trend_chart, unicode_table,
+    bar_chart, get_burn_rate, get_monthly_tx, get_net_worth_history,
+    get_savings_rate, get_yoy_comparison, predict_expenses, savings_recs, trend_chart, unicode_table,
 )
 
 
@@ -69,6 +70,9 @@ async def cmd_help(update,ctx):
             "tendencia": "📉 <b>/tendencia</b>\nGráficos ASCII de tendencias de gastos e ingresos (12 meses).",
             "panel": "🖥 <b>/panel</b>\nPanel financiero completo con snapshot actual, próximos recurrentes y anomalías.",
             "patrimonio": "💰 <b>/patrimonio</b>\nEvolución del patrimonio neto en los últimos 12 meses con tabla mensual y variación total.",
+            "comparar": "📊 <b>/comparar</b>\nComparativa de gastos por categoría del mes actual vs el mismo mes del año anterior.",
+            "burnrate": "🔥 <b>/burnrate</b>\nCalcula cuántos días durará tu saldo al ritmo actual de gasto diario.",
+            "ahorro": "🐷 <b>/ahorro</b>\nTasa de ahorro mensual (% de ingresos ahorrados) de los últimos 6 meses.",
             "forecast": "🔮 <b>/forecast</b>\nProyección del saldo al cierre del mes basada en el gasto diario promedio.",
             "anomalias": "⚠️ <b>/anomalias</b>\nDetecta categorías con gasto anormalmente alto este mes vs media de los últimos 3 meses.",
             "tags": "🏷️ <b>/tags</b>\nLista todas las etiquetas (#tag) usadas en notas, ordenadas por frecuencia.",
@@ -446,6 +450,45 @@ async def cmd_patrimonio(update,ctx):
     trend_icon="📈" if diff>0 else ("📉" if diff<0 else "➡️")
     await update.effective_message.reply_text(
         f"💰 <b>Evolución del patrimonio</b> (12 meses)\n<pre>{h(tbl)}</pre>\n{trend_icon} Variación: <b>€{h(f'{diff:+.2f}')}</b> ({h(f'{pct:+.1f}')}%)",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_comparar(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    comp=await get_yoy_comparison(db,uid)
+    if not comp["rows"]:
+        return await update.effective_message.reply_text("No hay datos suficientes para comparar.", parse_mode=ParseMode.HTML)
+    tbl=unicode_table(["Categoria",comp["current_month"],comp["prev_month"],"Var"],comp["rows"])
+    total_arrow="📈" if comp["total_pct"]>0 else ("📉" if comp["total_pct"]<0 else "➡️")
+    await update.effective_message.reply_text(
+        f"📊 <b>Comparativa {comp['current_month']} vs {comp['prev_month']}</b>\n<pre>{h(tbl[:3500])}</pre>\n"
+        f"{total_arrow} Total: <b>€{h(f'{comp['cur_total']:.2f}')}</b> vs €{h(f'{comp['prev_total']:.2f}')} ({h(f'{comp['total_pct']:+.0f}')}%)",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_burnrate(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    br=await get_burn_rate(db,uid)
+    days_msg=f"≈ <b>{br['days_left']} días</b>" if br["days_left"] is not None else "∞ (no hay gastos)"
+    await update.effective_message.reply_text(
+        f"🔥 <b>Burn Rate</b>\n\n"
+        f"💰 Saldo total: <b>€{h(f'{br['total_balance']:.2f}')}</b>\n"
+        f"📉 Gasto medio diario (este mes): <b>€{h(f'{br['daily_avg']:.2f}')}</b>\n"
+        f"⏱ Días hasta agotar saldo: {days_msg}\n"
+        f"📅 Proyección fin de mes: <b>€{h(f'{br['month_projection']:.2f}')}</b> en {br['days_in_month']-br['days_elapsed']} días restantes",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_ahorro(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    rates,avg=await get_savings_rate(db,uid)
+    if not rates:
+        return await update.effective_message.reply_text("No hay datos suficientes para calcular la tasa de ahorro.", parse_mode=ParseMode.HTML)
+    rows=[(m,f"{r:+.0f}%",f"€{i:.0f}",f"€{e:.0f}") for m,r,i,e in rates]
+    tbl=unicode_table(["Mes","% Ahorro","Ingresos","Gastos"],rows)
+    icon="🟢" if avg>20 else ("🟡" if avg>0 else "🔴")
+    await update.effective_message.reply_text(
+        f"🐷 <b>Tasa de ahorro</b> (6 meses)\n<pre>{h(tbl[:3500])}</pre>\n{icon} Media: <b>{h(f'{avg:+.0f}')}%</b>",
         parse_mode=ParseMode.HTML)
 
 

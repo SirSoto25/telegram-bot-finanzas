@@ -190,7 +190,7 @@ class AnalyticsTests(unittest.TestCase):
             "cmd_traspaso", "cmd_deshacer", "cmd_redondeo", "cmd_redondeo_toggle",
             "cmd_redondeo_cuenta", "cmd_recurrente", "cmd_agregar_recurrente",
             "cmd_borrar_recurrente", "cmd_resumen", "cmd_stats", "cmd_tendencia",
-            "cmd_panel", "cmd_patrimonio", "cmd_forecast", "cmd_anomalias", "cmd_tags",
+            "cmd_panel", "cmd_patrimonio", "cmd_burnrate", "cmd_comparar", "cmd_ahorro", "cmd_forecast", "cmd_anomalias", "cmd_tags",
             "cmd_sugerircategoria", "cmd_exportar", "cmd_alertas",
             "cmd_agregar_alerta", "cmd_borrar_alerta", "cmd_reset",
             "cmd_presupuesto", "cmd_presupuestoset", "cmd_buscar", "cmd_metas",

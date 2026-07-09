@@ -17,9 +17,9 @@ from finance_state import get_system_state, save_system_state
 
 from commands import (
     cmd_agregar_alerta, cmd_agregar_recurrente, cmd_agregaringresorecurrente,
-    cmd_alertas, cmd_anomalias, cmd_aportarmeta, cmd_borrar_alerta,
-    cmd_borrar_cuenta, cmd_borrar_recurrente, cmd_buscar, cmd_cancel,
-    cmd_cuentas, cmd_deshacer, cmd_exportar, cmd_forecast, cmd_gasto,
+    cmd_ahorro, cmd_alertas, cmd_anomalias, cmd_aportarmeta, cmd_borrar_alerta,
+    cmd_borrar_cuenta, cmd_borrar_recurrente, cmd_burnrate, cmd_buscar, cmd_cancel,
+    cmd_comparar, cmd_cuentas, cmd_deshacer, cmd_exportar, cmd_forecast, cmd_gasto,
     cmd_gasto_rapido, cmd_help, cmd_ingreso, cmd_ingresorecurrente, cmd_menu, cmd_metas,
     cmd_nueva_cuenta, cmd_nuevameta, cmd_panel, cmd_patrimonio, cmd_presupuesto,
     cmd_presupuestoset, cmd_recurrente, cmd_redondeo, cmd_redondeo_cuenta,
@@ -102,6 +102,9 @@ async def _create_ptb_app():
             "cmd_tendencia": finance_reports.cmd_tendencia,
             "cmd_panel": finance_reports.cmd_panel,
             "cmd_patrimonio": cmd_patrimonio,
+            "cmd_burnrate": cmd_burnrate,
+            "cmd_comparar": cmd_comparar,
+            "cmd_ahorro": cmd_ahorro,
             "cmd_forecast": finance_reports.cmd_forecast,
             "cmd_anomalias": finance_reports.cmd_anomalias,
             "cmd_tags": finance_reports.cmd_tags,

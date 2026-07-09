@@ -214,3 +214,105 @@ async def get_net_worth_history(db, uid, months=12):
         net = income - expense - transfers_out
         result.append((month_label, net, income, expense))
     return result
+
+
+async def get_yoy_comparison(db, uid, month_offset=0):
+    """Compare current month vs same month last year."""
+    now = datetime.now()
+    target = now - timedelta(days=30 * month_offset)
+    current_start = target.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current_end = end_of_month(target)
+    prev_year = target.replace(year=target.year - 1)
+    prev_start = prev_year.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    prev_end = end_of_month(prev_year)
+
+    c1 = await db.execute(
+        "SELECT category,amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?",
+        (uid, current_start.isoformat(), current_end.isoformat()),
+    )
+    c2 = await db.execute(
+        "SELECT category,amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?",
+        (uid, prev_start.isoformat(), prev_end.isoformat()),
+    )
+    cur_rows = await c1.fetchall()
+    prev_rows = await c2.fetchall()
+
+    cur = {r["category"]: r["amount"] for r in cur_rows}
+    prev = {r["category"]: r["amount"] for r in prev_rows}
+    all_cats = sorted(set(list(cur.keys()) + list(prev.keys())))
+    rows = []
+    for cat in all_cats:
+        cur_val = cur.get(cat, 0)
+        prev_val = prev.get(cat, 0)
+        if prev_val > 0:
+            pct = (cur_val - prev_val) / prev_val * 100
+        else:
+            pct = 100 if cur_val > 0 else 0
+        arrow = "⬆️" if pct > 10 else ("⬇️" if pct < -10 else "➡️")
+        rows.append((cat, f"€{cur_val:.2f}", f"€{prev_val:.2f}", f"{arrow} {pct:+.0f}%"))
+    cur_total = sum(cur.values())
+    prev_total = sum(prev.values())
+    total_pct = ((cur_total - prev_total) / prev_total * 100) if prev_total > 0 else 0
+    return {
+        "current_month": f"{MONTHS_ES[target.month]} {target.year}",
+        "prev_month": f"{MONTHS_ES[prev_year.month]} {prev_year.year}",
+        "rows": rows,
+        "cur_total": cur_total,
+        "prev_total": prev_total,
+        "total_pct": total_pct,
+    }
+
+
+async def get_burn_rate(db, uid):
+    """Estimate days until balance reaches zero at current spending rate."""
+    from finance_shared import end_of_month
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    days_elapsed = now.day
+    c = await db.execute(
+        "SELECT amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?",
+        (uid, month_start.isoformat(), now.isoformat()),
+    )
+    rows = await c.fetchall()
+    total_spent = sum(r["amount"] for r in rows)
+    daily_avg = total_spent / max(days_elapsed, 1)
+
+    c2 = await db.execute("SELECT balance FROM accounts WHERE user_id=?", (uid,))
+    accounts = await c2.fetchall()
+    total_balance = sum(a["balance"] for a in accounts)
+
+    days_left = int(total_balance / daily_avg) if daily_avg > 0 else None
+    month_projection = daily_avg * days_in_month
+    return {
+        "daily_avg": daily_avg,
+        "total_balance": total_balance,
+        "days_left": days_left,
+        "month_projection": month_projection,
+        "days_elapsed": days_elapsed,
+        "days_in_month": days_in_month,
+    }
+
+
+async def get_savings_rate(db, uid, months=6):
+    """Calculate monthly savings rate as percentage of income."""
+    from finance_shared import end_of_month
+    now = datetime.now()
+    result = []
+    for i in range(months - 1, -1, -1):
+        d = now - timedelta(days=30 * i)
+        start = d.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = end_of_month(d)
+        c = await db.execute(
+            "SELECT type,amount FROM transactions WHERE user_id=? AND date>=? AND date<=?",
+            (uid, start.isoformat(), end.isoformat()),
+        )
+        rows = await c.fetchall()
+        income = sum(r["amount"] for r in rows if r["type"] == "INGRESO")
+        expense = sum(r["amount"] for r in rows if r["type"] == "GASTO")
+        transfers = sum(r["amount"] for r in rows if r["type"] == "TRANSFERENCIA")
+        net = income - expense - transfers
+        rate = (net / income * 100) if income > 0 else 0
+        result.append((f"{MONTHS_ES[d.month]}", rate, income, expense + transfers))
+    avg_rate = sum(r[1] for r in result) / len(result) if result else 0
+    return result, avg_rate
