@@ -228,6 +228,8 @@ async def _create_ptb_app():
         else:
             logger.warning("JobQueue no disponible. Instala python-telegram-bot[job-queue] para activar jobs programados.")
 
+        await application.initialize()
+
         ptb_app = application
         return application
 
