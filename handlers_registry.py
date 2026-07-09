@@ -29,6 +29,7 @@ def register_handlers(application, handlers):
     application.add_handler(CommandHandler("cuentas", handlers["cmd_cuentas"]))
     application.add_handler(CommandHandler("nuevacuenta", handlers["cmd_nueva_cuenta"]))
     application.add_handler(CommandHandler("borrarcuenta", handlers["cmd_borrar_cuenta"]))
+    application.add_handler(CommandHandler("g", handlers["cmd_gasto_rapido"]))
     application.add_handler(CommandHandler("gasto", handlers["cmd_gasto"]))
     application.add_handler(CommandHandler("ingreso", handlers["cmd_ingreso"]))
     application.add_handler(CommandHandler("traspaso", handlers["cmd_traspaso"]))
@@ -66,7 +67,7 @@ def register_handlers(application, handlers):
     application.add_handler(
         CallbackQueryHandler(
             handlers["handle_callback"],
-            pattern="^(cancel_action|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*",
+            pattern="^(cancel_action|quick_acc_|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*",
         )
     )
     application.add_handler(

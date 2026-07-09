@@ -186,7 +186,7 @@ class AnalyticsTests(unittest.TestCase):
         app = _FakeApplication()
         handlers = {name: (lambda *args, **kwargs: None) for name in [
             "cmd_start", "cmd_help", "cmd_menu", "cmd_cancel", "cmd_cuentas",
-            "cmd_nueva_cuenta", "cmd_borrar_cuenta", "cmd_gasto", "cmd_ingreso",
+            "cmd_nueva_cuenta", "cmd_borrar_cuenta", "cmd_gasto", "cmd_gasto_rapido", "cmd_ingreso",
             "cmd_traspaso", "cmd_deshacer", "cmd_redondeo", "cmd_redondeo_toggle",
             "cmd_redondeo_cuenta", "cmd_recurrente", "cmd_agregar_recurrente",
             "cmd_borrar_recurrente", "cmd_resumen", "cmd_stats", "cmd_tendencia",

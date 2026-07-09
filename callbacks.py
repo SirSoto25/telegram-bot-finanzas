@@ -19,6 +19,7 @@ from finance_state import (
 )
 from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_analytics import unicode_table
+from commands import _finalize_quick_expense
 
 
 async def handle_menu_callback(update,ctx):
@@ -128,6 +129,14 @@ async def handle_callback(update,ctx):
         return await q.edit_message_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
     d=q.data
     if d=="cancel_action": await clear_session(db,tid); return await q.edit_message_text("✅ Operacion cancelada.")
+
+    if d.startswith("quick_acc_"):
+        aid=_cb_suffix_int(d,"quick_acc_")
+        if aid is None: return await q.edit_message_text("❌ Opcion invalida.")
+        s=await get_session(db,tid)
+        sdata=json.loads(s["data"]) if s and s["data"] else {}
+        await _finalize_quick_expense(db,tid,uid,sdata,aid,update)
+        return
 
     if d.startswith("aportar_goal_"):
         gid = _cb_suffix_int(d, "aportar_goal_")

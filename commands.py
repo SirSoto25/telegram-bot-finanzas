@@ -186,6 +186,40 @@ async def cmd_traspaso(update,ctx):
     await update.effective_message.reply_text("💱 <b>Transferencia</b>\n\nSelecciona la cuenta de ORIGEN:", reply_markup=_acct_kb(accts,"xfer_from",None), parse_mode=ParseMode.HTML)
 
 
+async def cmd_gasto_rapido(update,ctx):
+    from finance_shared import parse_quick_expense
+    text=update.effective_message.text.strip()
+    amt,desc,cat=parse_quick_expense(text)
+    if amt is None or amt<=0:
+        return await update.effective_message.reply_text("Uso: /g &lt;cantidad&gt; [descripción]\n\nEjemplos:\n/g 25.50 mercadona\n/g 10 cafe", parse_mode=ParseMode.HTML)
+    db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
+    accts=await get_accounts(db,uid)
+    if not accts:
+        return await update.effective_message.reply_text("Debes crear una cuenta primero con /nuevacuenta")
+    cat = cat or "Otros"
+    sdata={"quickAmount":amt,"quickDesc":desc or "","quickCat":cat}
+    if len(accts)==1:
+        await _finalize_quick_expense(db,tid,uid,sdata,accts[0]["id"],update)
+    else:
+        await save_session(db,tid,"quick_expense_account",sdata)
+        await update.effective_message.reply_text(
+            f"💸 Gasto rápido: <b>€{h(f'{amt:.2f}')}</b> en <b>{h(desc or '(sin descripción)')}</b>\nCategoria sugerida: <b>{h(cat)}</b>\n\nSelecciona la cuenta:",
+            reply_markup=_acct_kb(accts,"quick_acc"), parse_mode=ParseMode.HTML)
+
+
+async def _finalize_quick_expense(db,tid,uid,sdata,aid,update):
+    """Finalize a quick expense without leaving a flow open."""
+    amt=sdata["quickAmount"]; desc=sdata.get("quickDesc",""); cat=sdata["quickCat"]
+    now=datetime.now().isoformat()
+    await db.execute("INSERT INTO transactions(user_id,account_id,amount,type,category,date,description) VALUES(?,?,?,'GASTO',?,?,?)",(uid,aid,amt,cat,now,desc))
+    await db.execute("UPDATE accounts SET balance=balance-? WHERE id=?",(amt,aid))
+    await db.commit(); await clear_session(db,tid)
+    label=f"\n📝 {h(desc)}" if desc else ""
+    await update.effective_message.reply_text(
+        f"✅ Gasto registrado\n💸 €{h(f'{amt:.2f}')}\n📌 {h(cat)}{label}",
+        parse_mode=ParseMode.HTML)
+
+
 async def cmd_deshacer(update,ctx):
     db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
     c=await db.execute("SELECT * FROM transactions WHERE user_id=? AND type IN ('GASTO','INGRESO','TRANSFERENCIA') ORDER BY id DESC LIMIT 10",(uid,))

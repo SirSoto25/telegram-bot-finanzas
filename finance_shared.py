@@ -85,3 +85,18 @@ def session_is_expired(created_at, timeout_minutes, now=None):
     else:
         current = now
     return current - created_at > timedelta(minutes=timeout_minutes)
+
+def parse_quick_expense(text):
+    """Parse /g <amount> [description] into (amount, description, suggested_category)."""
+    import re
+    # Remove command prefix if present
+    t = re.sub(r"^\s*(/g|/i)\s*", "", text.strip())
+    if not t:
+        return None, None, None
+    m = re.match(r"(\d+([.,]\d{1,2})?)\s*(.*)", t)
+    if not m:
+        return None, None, None
+    amt = float(m.group(1).replace(",", "."))
+    desc = m.group(3).strip()
+    cat = _smart_category_suggestion(desc) if desc else None
+    return amt, desc, cat
