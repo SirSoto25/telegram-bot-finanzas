@@ -316,3 +316,137 @@ async def get_savings_rate(db, uid, months=6):
         result.append((f"{MONTHS_ES[d.month]}", rate, income, expense + transfers))
     avg_rate = sum(r[1] for r in result) / len(result) if result else 0
     return result, avg_rate
+
+
+def get_advice(history, burn_data, yoy_comp, savings_rate):
+    """Generate personalized financial tips based on data analysis."""
+    tips = []
+    # Check savings rate
+    if savings_rate < 0:
+        tips.append("🔴 Estás gastando más de lo que ingresas. Revisa tus gastos variables.")
+    elif savings_rate < 10:
+        tips.append("🟡 Tu tasa de ahorro es baja (<10%). Intenta reducir gastos en la categoría más alta.")
+    elif savings_rate > 30:
+        tips.append("🟢 ¡Excelente tasa de ahorro! Considera invertir el excedente.")
+
+    # Check YoY comparison
+    if yoy_comp and yoy_comp["total_pct"] > 20:
+        tips.append(f"⬆️ Tus gastos subieron un {yoy_comp['total_pct']:.0f}% vs el año pasado. Revisa si hay nuevos gastos fijos.")
+
+    # Burn rate advice
+    if burn_data["days_left"] is not None and burn_data["days_left"] < 30:
+        tips.append(f"⚠️ Al ritmo actual, tu saldo dura solo {burn_data['days_left']} días. Reduce gastos o busca ingresos extra.")
+
+    # Anomaly-based advice
+    if history:
+        last_income = sum(h[2] for h in history[-1:])
+        last_expense = sum(h[3] for h in history[-1:])
+        if last_income > 0 and last_expense > last_income * 0.9:
+            tips.append("⚡ Tus gastos están al 90% de tus ingresos este mes. Cuidado con los imprevistos.")
+
+    if not tips:
+        tips.append("✅ Tus finanzas están equilibradas. Sigue así y mantén el hábito de registrar tus gastos.")
+    return tips
+
+
+_50_30_20_CATEGORIES = {
+    "Comida": "necesidad", "Transporte": "necesidad", "Vivienda": "necesidad",
+    "Utilidades": "necesidad", "Coche": "necesidad",
+    "Suscripciones": "deseo", "Entretenimiento": "deseo", "Otros": "deseo",
+}
+
+
+async def get_50_30_20(db, uid):
+    """Calculate spending breakdown against the 50/30/20 rule."""
+    now = datetime.now()
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    c = await db.execute(
+        "SELECT type,amount,category FROM transactions WHERE user_id=? AND date>=? AND date<=?",
+        (uid, start.isoformat(), now.isoformat()),
+    )
+    rows = await c.fetchall()
+    income = sum(r["amount"] for r in rows if r["type"] == "INGRESO")
+    necesidades = sum(r["amount"] for r in rows if r["type"] == "GASTO" and _50_30_20_CATEGORIES.get(r["category"]) == "necesidad")
+    deseos = sum(r["amount"] for r in rows if r["type"] == "GASTO" and _50_30_20_CATEGORIES.get(r["category"]) == "deseo")
+    transfers = sum(r["amount"] for r in rows if r["type"] == "TRANSFERENCIA")
+    ahorro = income - necesidades - deseos - transfers
+    return {
+        "income": income,
+        "necesidades": necesidades,
+        "deseos": deseos,
+        "ahorro": ahorro,
+        "ideal_n": income * 0.5,
+        "ideal_d": income * 0.3,
+        "ideal_a": income * 0.2,
+    }
+
+
+async def get_goal_projections(db, uid):
+    """Calculate time to reach each savings goal based on average monthly savings."""
+    goals = await db._select_rows("savings_goals", filters=[("eq", "user_id", uid)])
+    if not goals:
+        return []
+    now = datetime.now()
+    start = now.replace(year=now.year - 1, month=now.month, day=1)
+    c = await db.execute(
+        "SELECT type,amount FROM transactions WHERE user_id=? AND date>=? AND type IN ('INGRESO','GASTO','TRANSFERENCIA')",
+        (uid, start.isoformat()),
+    )
+    rows = await c.fetchall()
+    income = sum(r["amount"] for r in rows if r["type"] == "INGRESO")
+    expense = sum(r["amount"] for r in rows if r["type"] == "GASTO")
+    transfers = sum(r["amount"] for r in rows if r["type"] == "TRANSFERENCIA")
+    months = max(((now - start).days / 30), 1)
+    monthly_saving = (income - expense - transfers) / months
+
+    projections = []
+    for g in goals:
+        remaining = g["target_amount"] - (g.get("current_amount") or 0)
+        if remaining <= 0:
+            months_left = 0
+            eta = "¡Conseguida!"
+        elif monthly_saving > 0:
+            months_left = int(remaining / monthly_saving)
+            eta_date = now + timedelta(days=months_left * 30)
+            eta = f"{MONTHS_ES[eta_date.month]} {eta_date.year}"
+        else:
+            months_left = None
+            eta = "∞ (sin ahorro positivo)"
+        projections.append({
+            "name": g["name"],
+            "target": g["target_amount"],
+            "current": g.get("current_amount") or 0,
+            "remaining": remaining,
+            "months_left": months_left,
+            "eta": eta,
+            "deadline": g.get("deadline"),
+        })
+    return projections
+
+
+async def get_phantom_expenses(db, uid):
+    """Detect potential duplicate/unnecessary spending."""
+    now = datetime.now()
+    start = now.replace(day=1) - timedelta(days=60)
+    c = await db.execute(
+        "SELECT amount,description,category FROM transactions WHERE user_id=? AND type='GASTO' AND date>=?",
+        (uid, start.isoformat()),
+    )
+    rows = await c.fetchall()
+    phantoms = []
+    seen = {}
+    for r in rows:
+        desc = (r["description"] or "").strip().lower()
+        if not desc:
+            continue
+        key = (desc, r["category"])
+        if key in seen:
+            seen[key]["count"] += 1
+            seen[key]["total"] += r["amount"]
+        else:
+            seen[key] = {"desc": desc, "cat": r["category"], "count": 1, "total": r["amount"]}
+    for (desc, cat), data in seen.items():
+        if data["count"] >= 2:
+            phantoms.append((data["desc"], data["cat"], data["count"], data["total"]))
+    phantoms.sort(key=lambda x: x[3], reverse=True)
+    return phantoms[:10]

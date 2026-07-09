@@ -23,7 +23,8 @@ from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_notifications import _check_budget_warning, _expense_ask_account, check_alerts
 from finance_analytics import (
     _build_anomalies, _build_financial_snapshot, _format_panel_text,
-    bar_chart, get_burn_rate, get_monthly_tx, get_net_worth_history,
+    bar_chart, get_50_30_20, get_advice, get_burn_rate, get_goal_projections,
+    get_monthly_tx, get_net_worth_history, get_phantom_expenses,
     get_savings_rate, get_yoy_comparison, predict_expenses, savings_recs, trend_chart, unicode_table,
 )
 
@@ -73,6 +74,10 @@ async def cmd_help(update,ctx):
             "comparar": "📊 <b>/comparar</b>\nComparativa de gastos por categoría del mes actual vs el mismo mes del año anterior.",
             "burnrate": "🔥 <b>/burnrate</b>\nCalcula cuántos días durará tu saldo al ritmo actual de gasto diario.",
             "ahorro": "🐷 <b>/ahorro</b>\nTasa de ahorro mensual (% de ingresos ahorrados) de los últimos 6 meses.",
+            "consejo": "🧠 <b>/consejo</b>\nConsejos personalizados basados en tus patrones de gasto, burn rate y comparativas.",
+            "regla": "📐 <b>/regla</b>\nVisualización de la regla 50/30/20 (necesidades/deseos/ahorro) de este mes.",
+            "proyeccion": "🎯 <b>/proyeccion</b>\nCuánto falta para alcanzar cada meta según tu ritmo de ahorro actual.",
+            "fantasmas": "👻 <b>/fantasmas</b>\nDetecta gastos duplicados o frecuentes que podrían ser fugas de dinero.",
             "forecast": "🔮 <b>/forecast</b>\nProyección del saldo al cierre del mes basada en el gasto diario promedio.",
             "anomalias": "⚠️ <b>/anomalias</b>\nDetecta categorías con gasto anormalmente alto este mes vs media de los últimos 3 meses.",
             "tags": "🏷️ <b>/tags</b>\nLista todas las etiquetas (#tag) usadas en notas, ordenadas por frecuencia.",
@@ -489,6 +494,69 @@ async def cmd_ahorro(update,ctx):
     icon="🟢" if avg>20 else ("🟡" if avg>0 else "🔴")
     await update.effective_message.reply_text(
         f"🐷 <b>Tasa de ahorro</b> (6 meses)\n<pre>{h(tbl[:3500])}</pre>\n{icon} Media: <b>{h(f'{avg:+.0f}')}%</b>",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_consejo(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    history=await get_net_worth_history(db,uid,months=3)
+    burn=await get_burn_rate(db,uid)
+    comp=await get_yoy_comparison(db,uid)
+    rates,avg_rate=await get_savings_rate(db,uid,months=1)
+    tips=get_advice(history,burn,comp,round(avg_rate))
+    await update.effective_message.reply_text(
+        f"🧠 <b>Consejo financiero personalizado</b>\n\n" + "\n".join(tips),
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_regla(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    d=await get_50_30_20(db,uid)
+    if d["income"]<=0:
+        return await update.effective_message.reply_text("No hay ingresos este mes para calcular la regla 50/30/20.", parse_mode=ParseMode.HTML)
+    def bar(label,actual,ideal):
+        pct=min(int(actual/d["income"]*100),100) if d["income"]>0 else 0
+        ipct=min(int(ideal/d["income"]*100),100) if d["income"]>0 else 0
+        bar_filled="█"*(pct//5); bar_ideal="▌"*(ipct//5)
+        return f"{label}: <b>€{actual:.0f}</b> ({pct}%) [ideal: €{ideal:.0f} ({ipct}%)]"
+    await update.effective_message.reply_text(
+        f"📐 <b>Regla 50/30/20</b> — este mes\n\n"
+        f"{bar('🏠 Necesidades',d['necesidades'],d['ideal_n'])}\n"
+        f"{bar('🎮 Deseos',d['deseos'],d['ideal_d'])}\n"
+        f"{bar('🐷 Ahorro',d['ahorro'],d['ideal_a'])}\n\n"
+        f"💰 Ingresos: <b>€{d['income']:.0f}</b>",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_proyeccion(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    projections=await get_goal_projections(db,uid)
+    if not projections:
+        return await update.effective_message.reply_text("No tienes metas de ahorro. Crea una con /nuevameta", parse_mode=ParseMode.HTML)
+    rows=[]
+    for p in projections:
+        pct=(p["current"]/p["target"]*100) if p["target"]>0 else 0
+        bar="▓"*int(pct//10)+"░"*(10-int(pct//10))
+        deadline_info=""
+        if p["deadline"]:
+            deadline_info=f"\n   📅 Límite: {p['deadline']}"
+        rows.append((f"{p['name']} {bar} {pct:.0f}%",f"€{p['current']:.0f}/{p['target']:.0f} → {p['eta']}{deadline_info}"))
+    tbl=unicode_table(["Meta","Progreso → ETA"],rows)
+    await update.effective_message.reply_text(
+        f"🎯 <b>Proyección de metas</b>\n<pre>{h(tbl[:3500])}</pre>\nBasado en tu ahorro medio de los últimos 12 meses.",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_fantasmas(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    phantoms=await get_phantom_expenses(db,uid)
+    if not phantoms:
+        return await update.effective_message.reply_text("👻 No se detectaron gastos duplicados en los últimos 60 días.", parse_mode=ParseMode.HTML)
+    rows=[(d,c,f"{n}x",f"€{t:.2f}") for d,c,n,t in phantoms]
+    tbl=unicode_table(["Descripción","Categoria","Veces","Total"],rows)
+    total_sum=sum(t for _,_,_,t in phantoms)
+    await update.effective_message.reply_text(
+        f"👻 <b>Gastos fantasma</b> (detectados en 60 días)\n<pre>{h(tbl[:3500])}</pre>\n💸 Total detectado: <b>€{h(f'{total_sum:.2f}')}</b>",
         parse_mode=ParseMode.HTML)
 
 
