@@ -560,6 +560,60 @@ async def cmd_fantasmas(update,ctx):
         parse_mode=ParseMode.HTML)
 
 
+async def cmd_resumendiario(update,ctx):
+    text=update.effective_message.text.strip()
+    arg=text.replace("/resumendiario","",1).strip().lower()
+    db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
+    if arg in ("on","si","activar","1","true"):
+        await db.execute("UPDATE users SET daily_summary_enabled=true WHERE telegram_id=?",(tid,))
+        await db.commit()
+        return await update.effective_message.reply_text("✅ Resumen diario <b>activado</b>. Recibirás un resumen cada mañana a las 8am.", parse_mode=ParseMode.HTML)
+    elif arg in ("off","no","desactivar","0","false"):
+        await db.execute("UPDATE users SET daily_summary_enabled=false WHERE telegram_id=?",(tid,))
+        await db.commit()
+        return await update.effective_message.reply_text("🔕 Resumen diario <b>desactivado</b>.", parse_mode=ParseMode.HTML)
+    else:
+        row=await (await db.execute("SELECT daily_summary_enabled FROM users WHERE telegram_id=?",(tid,))).fetchone()
+        enabled=row["daily_summary_enabled"] if row else False
+        status="✅ Activo" if enabled else "❌ Inactivo"
+        return await update.effective_message.reply_text(
+            f"📋 <b>Resumen diario</b>\n\nEstado: {status}\n\nUsa <b>/resumendiario on</b> o <b>/resumendiario off</b> para cambiar.",
+            parse_mode=ParseMode.HTML)
+
+
+async def cmd_factura(update,ctx):
+    db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
+    accts=await get_accounts(db,uid)
+    if not accts:
+        return await update.effective_message.reply_text("Debes crear una cuenta primero con /nuevacuenta", parse_mode=ParseMode.HTML)
+    await save_session(db,tid,"waiting_bill_name")
+    await update.effective_message.reply_text("🧾 <b>Nuevo recordatorio de factura</b>\n\n¿Nombre de la factura?\n(Ejemplo: Luz, Internet, Alquiler)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
+
+
+async def cmd_facturas(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    bills=await (await db.execute("SELECT * FROM bill_reminders WHERE user_id=?",(uid,))).fetchall()
+    if not bills:
+        return await update.effective_message.reply_text("No tienes recordatorios de facturas. Usa /factura para crear uno.", parse_mode=ParseMode.HTML)
+    rows=[(b["name"],f"Día {b['day_of_month']}",f"€{b['amount']:.2f}","✅" if b["enabled"] else "❌") for b in bills]
+    tbl=unicode_table(["Factura","Día","Importe","Activa"],rows)
+    btns=[(f"🗑 Eliminar {b['name']}",f"delbill_{b['id']}") for b in bills]
+    btns.append(("Cerrar","cancel_action"))
+    await update.effective_message.reply_text(
+        f"🧾 <b>Recordatorios de facturas</b>\n<pre>{h(tbl)}</pre>",
+        reply_markup=_kb(btns), parse_mode=ParseMode.HTML)
+
+
+async def cmd_borrarfactura(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    bills=await (await db.execute("SELECT * FROM bill_reminders WHERE user_id=?",(uid,))).fetchall()
+    if not bills:
+        return await update.effective_message.reply_text("No tienes facturas para eliminar.", parse_mode=ParseMode.HTML)
+    btns=[(f"{b['name']} (Día {b['day_of_month']})",f"delbill_{b['id']}") for b in bills]
+    btns.append(("Cancelar","cancel_action"))
+    await update.effective_message.reply_text("Selecciona la factura a eliminar:", reply_markup=_kb(btns))
+
+
 async def cmd_sugerircategoria(update,ctx):
     return await finance_reports.cmd_sugerircategoria(update,ctx)
 

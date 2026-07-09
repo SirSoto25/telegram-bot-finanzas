@@ -52,6 +52,10 @@ def register_handlers(application, handlers):
     application.add_handler(CommandHandler("regla", handlers["cmd_regla"]))
     application.add_handler(CommandHandler("proyeccion", handlers["cmd_proyeccion"]))
     application.add_handler(CommandHandler("fantasmas", handlers["cmd_fantasmas"]))
+    application.add_handler(CommandHandler("resumendiario", handlers["cmd_resumendiario"]))
+    application.add_handler(CommandHandler("factura", handlers["cmd_factura"]))
+    application.add_handler(CommandHandler("facturas", handlers["cmd_facturas"]))
+    application.add_handler(CommandHandler("borrarfactura", handlers["cmd_borrarfactura"]))
     application.add_handler(CommandHandler("anomalias", handlers["cmd_anomalias"]))
     application.add_handler(CommandHandler("tags", handlers["cmd_tags"]))
     application.add_handler(CommandHandler("sugerircategoria", handlers["cmd_sugerircategoria"]))
@@ -75,7 +79,7 @@ def register_handlers(application, handlers):
     application.add_handler(
         CallbackQueryHandler(
             handlers["handle_callback"],
-            pattern="^(cancel_action|quick_acc_|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|roundup_acc_|reset_confirm|undo_).*",
+             pattern="^(cancel_action|quick_acc_|aportar_goal_|del_account_|del_account_confirm_|xfer_from_|xfer_to_|del_recurring_|del_recurring_confirm_|alert_acc_|del_alert_|del_alert_confirm_|delbill_|roundup_acc_|reset_confirm|undo_).*",
         )
     )
     application.add_handler(

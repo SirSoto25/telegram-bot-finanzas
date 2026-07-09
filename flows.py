@@ -259,3 +259,31 @@ _TEXT_HANDLERS = {
 }
 
 
+
+async def _ht_bill_name(db,tid,uid,text,sdata,update,ctx):
+    sdata["billName"]=text; await save_session(db,tid,"waiting_bill_day",sdata)
+    await update.effective_message.reply_text(f"Factura: <b>{h(text)}</b>\n\n¿Qué día del mes se cobra?\n(1-31)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
+
+
+async def _ht_bill_day(db,tid,uid,text,sdata,update,ctx):
+    try:
+        day=int(text)
+        if day<1 or day>31:
+            return await update.effective_message.reply_text("Día inválido. Debe ser 1-31.", parse_mode=ParseMode.HTML)
+    except ValueError:
+        return await update.effective_message.reply_text("Día inválido. Introduce un número del 1 al 31.", parse_mode=ParseMode.HTML)
+    sdata["billDay"]=day; await save_session(db,tid,"waiting_bill_amount",sdata)
+    name=h(sdata["billName"])
+    await update.effective_message.reply_text(f"Factura: <b>{name}</b> — Día: <b>{day}</b>\n\n¿Cuál es el importe?\n(Formato: cantidad)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
+
+
+async def _ht_bill_amount(db,tid,uid,text,sdata,update,ctx):
+    amt=parse_amount(text)
+    if amt is None or amt<=0:
+        return await update.effective_message.reply_text("Cantidad inválida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
+    name=sdata["billName"]; day=sdata["billDay"]
+    await db.execute("INSERT INTO bill_reminders(user_id,name,day_of_month,amount) VALUES(?,?,?,?)",(uid,name,day,amt))
+    await db.commit(); await clear_session(db,tid)
+    await update.effective_message.reply_text(
+        f"✅ Recordatorio creado\n🧾 <b>{h(name)}</b>: €{h(f'{amt:.2f}')} — Día {day} de cada mes",
+        parse_mode=ParseMode.HTML)

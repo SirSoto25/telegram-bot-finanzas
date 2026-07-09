@@ -241,6 +241,13 @@ async def handle_callback(update,ctx):
             f"🗑 <b>¿Confirmas eliminar la alerta de {h(a['name'])}?</b>",
             reply_markup=_confirm_kb(f"del_alert_confirm_{aid}", d), parse_mode=ParseMode.HTML)
 
+    elif d.startswith("delbill_"):
+        bid=_cb_suffix_int(d,"delbill_")
+        if bid is None: return await q.edit_message_text("❌ Opcion invalida.")
+        await db.execute("DELETE FROM bill_reminders WHERE id=? AND user_id=?",(bid,uid))
+        await db.commit()
+        await q.edit_message_text("✅ Recordatorio de factura eliminado.")
+
     elif d.startswith("roundup_acc_"):
         accid = _cb_suffix_int(d, "roundup_acc_")
         if accid is None:

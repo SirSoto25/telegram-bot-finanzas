@@ -17,13 +17,13 @@ from finance_state import get_system_state, save_system_state
 
 from commands import (
     cmd_agregar_alerta, cmd_agregar_recurrente, cmd_agregaringresorecurrente,
-    cmd_ahorro, cmd_alertas, cmd_anomalias, cmd_aportarmeta, cmd_borrar_alerta,
-    cmd_borrar_cuenta, cmd_borrar_recurrente, cmd_burnrate, cmd_buscar, cmd_cancel,
-    cmd_comparar, cmd_consejo, cmd_cuentas, cmd_deshacer, cmd_exportar, cmd_fantasmas, cmd_forecast, cmd_gasto,
+    cmd_ahorro,     cmd_alertas, cmd_anomalias, cmd_aportarmeta, cmd_borrar_alerta,
+    cmd_borrar_cuenta, cmd_borrar_recurrente, cmd_borrarfactura, cmd_burnrate, cmd_buscar, cmd_cancel,
+    cmd_comparar, cmd_consejo, cmd_cuentas, cmd_deshacer, cmd_exportar, cmd_factura, cmd_facturas, cmd_fantasmas, cmd_forecast, cmd_gasto,
     cmd_gasto_rapido, cmd_help, cmd_ingreso, cmd_ingresorecurrente, cmd_menu, cmd_metas,
     cmd_nueva_cuenta, cmd_nuevameta, cmd_panel, cmd_patrimonio, cmd_presupuesto,
     cmd_presupuestoset, cmd_proyeccion, cmd_recurrente, cmd_redondeo, cmd_redondeo_cuenta,
-    cmd_redondeo_toggle, cmd_regla, cmd_reset, cmd_start, cmd_stats,
+    cmd_redondeo_toggle, cmd_regla, cmd_reset, cmd_resumendiario, cmd_start, cmd_stats,
     cmd_sugerircategoria, cmd_tags, cmd_tendencia, cmd_traspaso,
 )
 from callbacks import (
@@ -109,6 +109,10 @@ async def _create_ptb_app():
             "cmd_regla": cmd_regla,
             "cmd_proyeccion": cmd_proyeccion,
             "cmd_fantasmas": cmd_fantasmas,
+            "cmd_resumendiario": cmd_resumendiario,
+            "cmd_factura": cmd_factura,
+            "cmd_facturas": cmd_facturas,
+            "cmd_borrarfactura": cmd_borrarfactura,
             "cmd_forecast": finance_reports.cmd_forecast,
             "cmd_anomalias": finance_reports.cmd_anomalias,
             "cmd_tags": finance_reports.cmd_tags,
@@ -177,8 +181,44 @@ async def _create_ptb_app():
             meta_data["weekly_panel_last_sent"] = today
             await save_system_state(db, "bot_meta", meta_data)
 
+        async def send_daily_summaries(ctx):
+            db = application.bot_data["db"]
+            rows = await (await db.execute("SELECT telegram_id FROM users WHERE daily_summary_enabled=true")).fetchall()
+            for user in rows:
+                try:
+                    tid = user["telegram_id"]
+                    c = await db.execute("SELECT type,amount FROM transactions WHERE date>=?", (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),))
+                    tx_rows = await c.fetchall()
+                    income = sum(r["amount"] for r in tx_rows if r["type"] == "INGRESO")
+                    expense = sum(r["amount"] for r in tx_rows if r["type"] == "GASTO")
+                    await ctx.bot.send_message(
+                        chat_id=tid,
+                        text=f"☀️ <b>Resumen de hoy</b>\n\n💰 Ingresos: <b>€{income:.2f}</b>\n💸 Gastos: <b>€{expense:.2f}</b>\n📊 Balance: <b>€{income-expense:+.2f}</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    logger.exception("No se pudo enviar resumen diario")
+
+        async def check_bill_reminders(ctx):
+            db = application.bot_data["db"]
+            today = datetime.now().day
+            rows = await (await db.execute("SELECT * FROM bill_reminders WHERE day_of_month=? AND enabled=true", (today,))).fetchall()
+            for bill in rows:
+                try:
+                    user = await (await db.execute("SELECT telegram_id FROM users WHERE id=?", (bill["user_id"],))).fetchone()
+                    if user:
+                        await ctx.bot.send_message(
+                            chat_id=user["telegram_id"],
+                            text=f"🧾 <b>Recordatorio de factura</b>\n\n{bill['name']}: €{'%.2f' % bill['amount']}\n📅 Hoy es día {today}",
+                            parse_mode=ParseMode.HTML,
+                        )
+                except Exception:
+                    logger.exception("No se pudo enviar recordatorio de factura")
+
         application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
         application.job_queue.run_repeating(maybe_send_weekly_panel, interval=3600, first=60)
+        application.job_queue.run_repeating(send_daily_summaries, interval=3600, first=30)
+        application.job_queue.run_repeating(check_bill_reminders, interval=3600, first=120)
 
         ptb_app = application
         return application
