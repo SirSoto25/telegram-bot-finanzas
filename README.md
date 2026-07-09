@@ -9,7 +9,7 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 ## Características
 
 - **Cuentas**: múltiples cuentas (nómina, ahorros, inversión, cripto) con saldo individual
-- **Gastos/Ingresos**: registro con categorías, fechas personalizadas, notas y tags (`#tag`)
+- **Gastos/Ingresos**: registro con categorías, fechas personalizadas, notas, tags y comando rápido `/g`
 - **Transferencias**: mover dinero entre cuentas propias
 - **Recurrentes**: gastos e ingresos automáticos programados (semanal/mensual/trimestral/anual)
 - **Redondeo**: ahorro automático redondeando cada gasto al euro superior
@@ -17,9 +17,13 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 - **Presupuestos**: límites mensuales por categoría con alertas de progreso
 - **Metas de ahorro**: objetivos con fecha límite, aportes y seguimiento
 - **Alertas**: notificaciones cuando el saldo de una cuenta baja de un umbral
-- **Reportes**: resumen mensual, estadísticas 6 meses, tendencias 12 meses, panel financiero, anomalías, forecast, tags
+- **Reportes**: resumen, estadísticas 6m, tendencias 12m, panel financiero, patrimonio, comparativa interanual, burn rate, tasa de ahorro
+- **Coaching**: consejos personalizados, visualización 50/30/20, proyección de metas, detector de gastos duplicados
+- **Facturas**: recordatorios mensuales de facturas (luz, internet, alquiler...)
+- **Gamificación**: racha de ahorro, logros (7 disponibles), resumen anual
+- **Gastos compartidos**: `/split` para dividir gastos entre usuarios, `/deudas` para seguimiento
 - **Exportación**: CSV y gráficos ASCII en el chat
-- **Jobs programados**: recordatorios de recurrentes cada hora, panel semanal los lunes
+- **Jobs**: recordatorios recurrentes, panel semanal, resumen diario, facturas del día
 
 ## Comandos
 
@@ -33,11 +37,12 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 ### Gastos e ingresos
 | Comando | Descripción |
 |---------|-------------|
-| `/gasto` | Registrar un gasto |
+| `/g <cantidad> [desc]` | Gasto rápido con categoría automática |
+| `/gasto` | Registrar un gasto (flujo guiado) |
 | `/ingreso` | Registrar un ingreso |
 | `/traspaso` | Transferir entre cuentas |
 | `/deshacer` | Revertir último movimiento |
-| `/buscar` | Buscar en descripciones |
+| `/buscar <texto>` | Buscar en descripciones |
 
 ### Reportes
 | Comando | Descripción |
@@ -50,6 +55,18 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 | `/anomalias` | Detección de gastos anómalos |
 | `/tags` | Etiquetas usadas en notas |
 | `/exportar` | Descargar CSV de transacciones |
+| `/patrimonio` | Evolución del patrimonio neto 12 meses |
+| `/comparar` | Comparativa interanual por categoría |
+| `/burnrate` | Días hasta agotar saldo al ritmo actual |
+| `/ahorro` | Tasa de ahorro mensual 6 meses |
+
+### Coaching financiero
+| Comando | Descripción |
+|---------|-------------|
+| `/consejo` | Consejos personalizados según tus datos |
+| `/regla` | Visualización de la regla 50/30/20 |
+| `/proyeccion` | Cuándo alcanzarás cada meta de ahorro |
+| `/fantasmas` | Detector de gastos duplicados o frecuentes |
 
 ### Presupuestos y metas
 | Comando | Descripción |
@@ -60,7 +77,7 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 | `/nuevameta` | Crear nueva meta |
 | `/aportarmeta` | Aportar a una meta |
 
-### Alertas y recurrentes
+### Alertas, facturas y recurrentes
 | Comando | Descripción |
 |---------|-------------|
 | `/alertas` | Ver alertas de saldo bajo |
@@ -71,14 +88,31 @@ Bot de Telegram para gestión de finanzas personales con Supabase + Flask WSGI, 
 | `/borrarrecurrente` | Eliminar recurrente |
 | `/ingresorecurrente` | Ver ingresos recurrentes |
 | `/agregaringresorecurrente` | Agregar ingreso recurrente |
+| `/factura` | Crear recordatorio de factura mensual |
+| `/facturas` | Listar recordatorios de facturas |
+| `/borrarfactura` | Eliminar recordatorio de factura |
+
+### Gamificación
+| Comando | Descripción |
+|---------|-------------|
+| `/racha` | Racha de meses consecutivos ahorrando |
+| `/logros` | Logros desbloqueados (7 disponibles) |
+| `/resumenanual` | Resumen anual con top categorías |
+
+### Gastos compartidos
+| Comando | Descripción |
+|---------|-------------|
+| `/split <cantidad> @u1 @u2` | Dividir gasto entre varias personas |
+| `/deudas` | Ver quién te debe y a quién le debes |
 
 ### Configuración
 | Comando | Descripción |
 |---------|-------------|
 | `/start` | Iniciar el bot |
-| `/help` | Mostrar todos los comandos |
+| `/help [comando]` | Mostrar todos los comandos o ayuda detallada |
 | `/menu` | Panel con botones interactivos |
 | `/cancel` | Cancelar operación en curso |
+| `/resumendiario [on\|off]` | Activar/desactivar resumen diario a las 8am |
 | `/redondeo` | Ver estado del redondeo automático |
 | `/redondeotoggle` | Activar/desactivar redondeo |
 | `/redondeocuenta` | Cambiar cuenta destino del redondeo |
@@ -127,22 +161,24 @@ python -m pytest tests/ -v
 
 ```
 telegram-bot-finanzas/
-├── bot_pythonanywhere.py   # Entry point Flask WSGI + PTB init (157 líneas)
+├── bot_pythonanywhere.py   # Entry point Flask WSGI + PTB init + jobs (262 líneas)
 ├── _env.py                 # get_db() y variables de entorno compartidas
-├── commands.py             # 37 handlers de comandos (/gasto, /resumen, ...)
+├── commands.py             # 55 handlers de comandos (/g, /gasto, /patrimonio, /split, ...)
 ├── callbacks.py            # Handlers de callbacks (botones inline, flujos)
-├── flows.py                # State machine de flujos de texto + handle_text
-├── finance_db.py           # Adapter SupabaseDB con parser SQL
-├── finance_shared.py       # Constantes, utilidades (h(), parse_amount, ...)
+├── flows.py                # State machine de flujos de texto + handle_text (289 líneas)
+├── finance_db.py           # Adapter SupabaseDB con parser SQL (738 líneas)
+├── finance_shared.py       # Constantes, utilidades (h(), parse_amount, parse_quick_expense)
 ├── finance_state.py        # Gestión de sesiones y estado de usuario
 ├── finance_ui.py           # Constructores de teclados inline
-├── finance_analytics.py    # Análisis: anomalías, predicciones, gráficos
-├── finance_notifications.py # Notificaciones: alertas, avisos
+├── finance_analytics.py    # Análisis: anomalías, coaching, gamificación, gráficos (536 líneas)
+├── finance_notifications.py # Notificaciones: alertas, avisos de presupuesto
 ├── finance_reports.py      # Handlers delegados de reportes
 ├── handlers_registry.py    # Registro de handlers en PTB Application
 ├── tests/                  # Tests con pytest (28 tests)
 ├── requirements.txt        # Dependencias
-└── requirements-dev.txt    # Dependencias de desarrollo
+├── requirements-dev.txt    # Dependencias de desarrollo
+├── README.md               # Esta documentación
+├── ARCHITECTURE.md          # Arquitectura detallada
 ```
 
 ### Flujo de datos

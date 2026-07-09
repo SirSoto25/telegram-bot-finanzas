@@ -100,6 +100,16 @@ async def cmd_help(update,ctx):
             "reset": "⚠️ <b>/reset</b>\nBorra TODOS tus datos permanentemente. Requiere confirmación explícita.",
             "menu": "🏠 <b>/menu</b>\nAbre el panel principal con 12 botones interactivos para todas las funciones.",
             "cancel": "❌ <b>/cancel</b>\nCancela la operación en curso y limpia la sesión.",
+            "g": "💨 <b>/g &lt;cantidad&gt; [descripción]</b>\nRegistra un gasto rápido en un solo mensaje. Infiere la categoría automáticamente.\n\nEjemplo: /g 25.50 mercadona",
+            "resumendiario": "☀️ <b>/resumendiario [on|off]</b>\nActiva o desactiva el resumen diario automático. Recibirás un balance cada mañana a las 8am.",
+            "factura": "🧾 <b>/factura</b>\nCrea un recordatorio de factura mensual (luz, internet, alquiler). Te avisará el día configurado.",
+            "facturas": "📋 <b>/facturas</b>\nLista tus recordatorios de facturas configurados.",
+            "borrarfactura": "🗑 <b>/borrarfactura</b>\nElimina un recordatorio de factura.",
+            "racha": "🔥 <b>/racha</b>\nMuestra tu racha de meses consecutivos ahorrando y tu mejor récord.",
+            "logros": "🏆 <b>/logros</b>\nMuestra los logros desbloqueados (7 disponibles: primer gasto, 100 transacciones, racha de 3 meses...).",
+            "resumenanual": "🎉 <b>/resumen2025</b>\nResumen anual con ingresos, gastos, % ahorrado y top 3 categorías de gasto.",
+            "split": "💸 <b>/split &lt;cantidad&gt; @usuario1 @usuario2 ...</b>\nDivide un gasto entre varias personas. Cada una deberá su parte.\n\nEjemplo: /split 60 @juan @maria cena",
+            "deudas": "💳 <b>/deudas</b>\nMuestra quién te debe dinero y a quién le debes (gastos compartidos).",
         }
         msg = help_map.get(cmd, f"❓ Comando <b>/{cmd}</b> no encontrado.\nUsa /help para ver todos los comandos.")
         return await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
@@ -111,23 +121,33 @@ async def cmd_help(update,ctx):
 /cuentas /nuevacuenta /borrarcuenta
 
 <b>💸 Transacciones</b>
-/gasto /ingreso /traspaso /deshacer /buscar
+/g /gasto /ingreso /traspaso /deshacer /buscar
 
 <b>📊 Reportes</b>
 /resumen /stats /tendencia /panel /forecast /anomalias /tags /exportar
+/patrimonio /comparar /burnrate /ahorro
+
+<b>🧠 Coaching</b>
+/consejo /regla /proyeccion /fantasmas
 
 <b>🎯 Presupuestos y metas</b>
 /presupuesto /presupuestoset /metas /nuevameta /aportarmeta
 
-<b>🔔 Alertas y recurrentes</b>
+<b>🔔 Alertas, facturas y recurrentes</b>
 /alertas /agregaralerta /borraralerta /recurrente /agregarrecurrente /borrarrecurrente
-/ingresorecurrente /agregaringresorecurrente
+/ingresorecurrente /agregaringresorecurrente /factura /facturas /borrarfactura
+
+<b>🏆 Gamificación</b>
+/racha /logros /resumenanual
+
+<b>💳 Gastos compartidos</b>
+/split /deudas
 
 <b>🪙 Redondeo</b>
 /redondeo /redondeotoggle /redondeocuenta
 
 <b>⚙️ Otros</b>
-/start /menu /cancel /sugerircategoria /reset
+/start /menu /cancel /sugerircategoria /reset /resumendiario
 """, parse_mode=ParseMode.HTML)
 
 

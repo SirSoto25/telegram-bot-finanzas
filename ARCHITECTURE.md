@@ -53,8 +53,8 @@ The bot follows a layered architecture with clear separation of concerns:
 - Job scheduling: recurring reminders (hourly), weekly panel (Mondays)
 - Handler registration via `handlers_registry`
 
-### `commands.py` — Command Handlers (454 lines)
-37 handlers for all `/command` invocations. Each handler:
+### `commands.py` — Command Handlers (809 lines)
+55 handlers for all `/command` invocations. Each handler:
 1. Gets DB connection via `await get_db()`
 2. Validates prerequisites (e.g., user has accounts)
 3. Either shows data directly or starts a multi-step flow by saving session state
@@ -88,6 +88,7 @@ Multi-step conversation state machine:
 - Constants: `CATEGORY_MAP`, `ACCOUNT_TYPE_MAP`, `FREQ_MAP`, `MONTHS_ES`
 - `h(text)`: HTML escape wrapper
 - `parse_amount(text)`: Float parser with validation
+- `parse_quick_expense(text)`: Parse `/g <amount> [desc]` input
 - `_cb_suffix_int/str`: Parse callback data prefixes
 - `_extract_tags`: Extract `#tag` from text
 - `_smart_category_suggestion`: Keyword-based category inference
@@ -108,7 +109,7 @@ Multi-step conversation state machine:
 - `multi_kb(items, prefix)`: Multi-column keyboard
 - `_confirm_kb(confirm_cb, current_text)`: Yes/No confirmation keyboard
 
-### `finance_analytics.py` — Analytics (194 lines)
+### `finance_analytics.py` — Analytics (536 lines)
 - `get_monthly_tx`: Monthly income/expense aggregation
 - `bar_chart` / `trend_chart`: ASCII chart generators
 - `unicode_table`: ASCII table formatter
@@ -116,6 +117,16 @@ Multi-step conversation state machine:
 - `_build_financial_snapshot`: Current financial state summary
 - `_format_panel_text`: Formatted panel output
 - `predict_expenses` / `savings_recs`: Predictions and recommendations
+- `get_net_worth_history`: Net worth evolution over N months
+- `get_yoy_comparison`: Year-over-year category comparison
+- `get_burn_rate`: Daily spend rate and days until balance exhausted
+- `get_savings_rate`: Monthly savings percentage over N months
+- `get_advice`: Personalized financial tips from data patterns
+- `get_50_30_20`: Spending breakdown vs 50/30/20 rule
+- `get_goal_projections`: Time-to-completion for savings goals
+- `get_phantom_expenses`: Duplicate/recurring expense detection
+- `check_and_award_achievements`: Gamification achievement system (7 achievements)
+- `get_streak` / `update_streak`: Savings streak tracking
 
 ### `finance_notifications.py` — Notifications (59 lines)
 - `check_alerts`: Look for accounts below alert threshold
@@ -133,12 +144,47 @@ Multi-step conversation state machine:
 - `cmd_sugerircategoria`: Category suggestion
 - `cmd_exportar`: CSV export
 
-### `handlers_registry.py` — Handler Registration (78 lines)
-- `register_handlers(application, handlers)`: Wires all 35 command handlers, 6 callback handlers, 1 message handler
+### `handlers_registry.py` — Handler Registration
+- `register_handlers(application, handlers)`: Wires 55 command handlers, 6 callback handlers, 1 message handler
 - Fallback classes for testing without PTB installed
 
 ### `_env.py` — Environment (8 lines)
 - Shared `get_db()` and `SUPABASE_URL`/`SUPABASE_KEY` for all modules
+
+## Scheduled Jobs
+
+Four background jobs run via PTB's `JobQueue`:
+
+| Job | Interval | First run | Description |
+|-----|----------|-----------|-------------|
+| `check_recurring_reminders` | 1 hour | +10s | Checks for recurring expenses due within 24h and sends reminders |
+| `maybe_send_weekly_panel` | 1 hour | +60s | Sends financial panel to all users on Mondays |
+| `send_daily_summaries` | 1 hour | +30s | Sends daily balance summary to users with `/resumendiario on` |
+| `check_bill_reminders` | 1 hour | +120s | Checks for bill reminders due today and sends notifications |
+
+## New Features (post-refactor)
+
+### Quick expense (`/g`)
+Single-message expense registration: `/g 25.50 mercadona` parses amount, infers category via keyword matching, and if the user has multiple accounts, shows an inline keyboard to select one.
+
+### Coaching suite
+- `/consejo`: Analyzes savings rate, YoY trends, burn rate, and anomaly data to generate personalized tips
+- `/regla`: Visual breakdown of spending into needs/wants/savings vs the 50/30/20 rule
+- `/proyeccion`: For each savings goal, estimates months to completion based on average monthly savings
+- `/fantasmas`: Scans last 60 days of expenses for repeated descriptions, flagging potential money leaks
+
+### Notifications
+- `/resumendiario on|off`: Toggle daily 8am balance summary
+- `/factura` flow: Create monthly bill reminders (name, day, amount) with automatic notifications
+
+### Gamification
+- `/racha`: Tracks consecutive months with positive savings
+- `/logros`: 7 achievements (first expense, 100 transactions, streak milestones, etc.)
+- `/resumenanual`: Yearly review with top spending categories
+
+### Shared expenses
+- `/split 60 @juan @maria`: Divides an expense among mentioned users
+- `/deudas`: Shows who owes you and who you owe
 
 ## State Machine
 
