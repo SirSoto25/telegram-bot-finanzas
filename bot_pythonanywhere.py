@@ -502,8 +502,6 @@ async def cmd_borrar_recurrente(update,ctx):
     btns.append(("Cancelar","cancel_action"))
     await update.effective_message.reply_text("Selecciona el gasto recurrente a eliminar:", reply_markup=_kb(btns))
 
-async def cmd_resumen(update,ctx):
-    return await finance_reports.cmd_resumen(update,ctx)
 
 async def handle_resumen_callback(update,ctx):
     q=update.callback_query; await _safe_answer_callback(q)
