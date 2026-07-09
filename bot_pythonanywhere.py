@@ -83,18 +83,6 @@ async def _ptb_error_handler(update, context):
     logger.exception("Unhandled PTB exception", exc_info=context.error)
 
 
-
-async def _tx_wrap(db, ops):
-    await db.execute("BEGIN")
-    try:
-        for sql, params in ops:
-            await db.execute(sql, params)
-        await db.commit()
-    except Exception:
-        await db.execute("ROLLBACK")
-        raise
-
-
 # ── DB ────────────────────────────────────────────────────────────────
 async def migrate_legacy_sqlite(db):
     if not LEGACY_SQLITE_PATH.exists():
