@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -25,7 +25,7 @@ except Exception:
 from finance_analytics import _build_anomalies, _build_financial_snapshot, _format_panel_text, bar_chart, get_monthly_tx, predict_expenses, savings_recs, trend_chart, unicode_table
 from finance_db import get_db
 from finance_notifications import check_alerts
-from finance_shared import CATEGORY_MAP, MONTHS_ES, _smart_category_suggestion, h
+from finance_shared import CATEGORY_MAP, MONTHS_ES, _smart_category_suggestion, end_of_month, h
 from finance_state import get_accounts, get_or_create_user, get_roundup, save_session
 from finance_ui import _acct_kb, _kb, multi_kb
 
@@ -37,11 +37,7 @@ async def cmd_resumen(update, ctx):
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     now = datetime.now()
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    end = (
-        now.replace(year=now.year + 1, month=1, day=1) - timedelta(seconds=1)
-        if now.month == 12
-        else (now.replace(month=now.month + 1, day=1) - timedelta(seconds=1))
-    )
+    end = end_of_month(now)
     c = await db.execute(
         "SELECT * FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA' ORDER BY date DESC",
         (uid, start.isoformat(), end.isoformat()),
