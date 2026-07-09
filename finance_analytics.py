@@ -192,3 +192,25 @@ def _format_panel_text(snapshot, anomalies):
     else:
         msg += "✅ Sin anomalías claras este mes.\n"
     return msg
+
+
+async def get_net_worth_history(db, uid, months=12):
+    """Calculate net worth at the end of each month for the last N months."""
+    from finance_shared import end_of_month
+    now = datetime.now()
+    result = []
+    for i in range(months - 1, -1, -1):
+        d = now - timedelta(days=30 * i)
+        month_end = end_of_month(d)
+        month_label = f"{MONTHS_ES[d.month]} {d.year}"
+        c = await db.execute(
+            "SELECT type,amount FROM transactions WHERE user_id=? AND date<=?",
+            (uid, month_end.isoformat()),
+        )
+        rows = await c.fetchall()
+        income = sum(r["amount"] for r in rows if r["type"] == "INGRESO")
+        expense = sum(r["amount"] for r in rows if r["type"] == "GASTO")
+        transfers_out = sum(r["amount"] for r in rows if r["type"] == "TRANSFERENCIA")
+        net = income - expense - transfers_out
+        result.append((month_label, net, income, expense))
+    return result

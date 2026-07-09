@@ -23,7 +23,7 @@ from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_notifications import _check_budget_warning, _expense_ask_account, check_alerts
 from finance_analytics import (
     _build_anomalies, _build_financial_snapshot, _format_panel_text,
-    bar_chart, get_monthly_tx, predict_expenses, savings_recs, trend_chart, unicode_table,
+    bar_chart, get_monthly_tx, get_net_worth_history, predict_expenses, savings_recs, trend_chart, unicode_table,
 )
 
 
@@ -68,6 +68,7 @@ async def cmd_help(update,ctx):
             "stats": "📈 <b>/stats</b>\nTabla de estadísticas de los últimos 6 meses con % de ahorro mensual.",
             "tendencia": "📉 <b>/tendencia</b>\nGráficos ASCII de tendencias de gastos e ingresos (12 meses).",
             "panel": "🖥 <b>/panel</b>\nPanel financiero completo con snapshot actual, próximos recurrentes y anomalías.",
+            "patrimonio": "💰 <b>/patrimonio</b>\nEvolución del patrimonio neto en los últimos 12 meses con tabla mensual y variación total.",
             "forecast": "🔮 <b>/forecast</b>\nProyección del saldo al cierre del mes basada en el gasto diario promedio.",
             "anomalias": "⚠️ <b>/anomalias</b>\nDetecta categorías con gasto anormalmente alto este mes vs media de los últimos 3 meses.",
             "tags": "🏷️ <b>/tags</b>\nLista todas las etiquetas (#tag) usadas en notas, ordenadas por frecuencia.",
@@ -430,6 +431,22 @@ async def cmd_forecast(update,ctx):
 
 async def cmd_tags(update,ctx):
     return await finance_reports.cmd_tags(update,ctx)
+
+
+async def cmd_patrimonio(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    history=await get_net_worth_history(db,uid,months=12)
+    if not history:
+        return await update.effective_message.reply_text("No tienes transacciones para calcular el patrimonio.", parse_mode=ParseMode.HTML)
+    rows=[(m,f"€{n:.2f}",f"+€{i:.2f}",f"-€{e:.2f}") for m,n,i,e in history]
+    tbl=unicode_table(["Mes","Patrimonio","Ingresos","Gastos"],rows)
+    current=history[-1][1]
+    oldest=history[0][1]
+    diff=current-oldest; pct=(diff/abs(oldest)*100) if oldest!=0 else 0
+    trend_icon="📈" if diff>0 else ("📉" if diff<0 else "➡️")
+    await update.effective_message.reply_text(
+        f"💰 <b>Evolución del patrimonio</b> (12 meses)\n<pre>{h(tbl)}</pre>\n{trend_icon} Variación: <b>€{h(f'{diff:+.2f}')}</b> ({h(f'{pct:+.1f}')}%)",
+        parse_mode=ParseMode.HTML)
 
 
 async def cmd_sugerircategoria(update,ctx):

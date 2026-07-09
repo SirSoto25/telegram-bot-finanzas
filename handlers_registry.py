@@ -53,6 +53,7 @@ def register_handlers(application, handlers):
     application.add_handler(CommandHandler("agregaralerta", handlers["cmd_agregar_alerta"]))
     application.add_handler(CommandHandler("borraralerta", handlers["cmd_borrar_alerta"]))
     application.add_handler(CommandHandler("reset", handlers["cmd_reset"]))
+    application.add_handler(CommandHandler("patrimonio", handlers["cmd_patrimonio"]))
     application.add_handler(CommandHandler("presupuesto", handlers["cmd_presupuesto"]))
     application.add_handler(CommandHandler("presupuestoset", handlers["cmd_presupuestoset"]))
     application.add_handler(CommandHandler("buscar", handlers["cmd_buscar"]))
