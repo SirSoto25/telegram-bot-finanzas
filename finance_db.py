@@ -455,6 +455,14 @@ class SupabaseDB:
             on_conflict = "user_id"
         elif table == "budgets":
             on_conflict = "user_id,category,month"
+        elif table == "bill_reminders":
+            on_conflict = "id"
+        elif table == "exchange_rates":
+            on_conflict = "from_currency,to_currency"
+        elif table == "streaks":
+            on_conflict = "user_id"
+        elif table == "achievements":
+            on_conflict = "user_id,achievement_key"
         else:
             on_conflict = "id"
 
