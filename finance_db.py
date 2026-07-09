@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -53,6 +54,9 @@ def _is_rls_denied(err):
     code = str(payload.get("code", "")).strip()
     message = str(payload.get("message", "")).lower()
     return code == "42501" and "row-level security" in message
+
+
+_OP_MAP = {"=": "eq", "!=": "neq", "<>": "neq", ">=": "gte", "<=": "lte", ">": "gt", "<": "lt", "like": "like", "in": "in"}
 
 
 class SupabaseCursor:
@@ -186,6 +190,318 @@ class SupabaseDB:
         cur = rows[0]["current_amount"] or 0
         await self._update_rows("savings_goals", {"current_amount": cur + delta}, [("eq", "id", gid), ("eq", "user_id", uid)])
 
+    def _parse_columns(self, sql_part):
+        if not sql_part or sql_part.strip() == "*":
+            return "*"
+        return [c.strip() for c in sql_part.split(",")]
+
+    def _map_op(self, sql_op):
+        return _OP_MAP.get(sql_op.lower(), "eq")
+
+    def _parse_where_clause(self, where_text):
+        conds = []
+        parts = re.split(r"\s+AND\s+", where_text, flags=re.I)
+        for part in parts:
+            part = part.strip()
+            m = re.match(r"(\w+)\.(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\))", part, re.I)
+            if m:
+                conds.append((m.group(2), m.group(3).lower(), m.group(4), part))
+                continue
+            m = re.match(r"(\w+)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(\?|'[^']*'|\([^)]+\))", part, re.I)
+            if m:
+                conds.append((m.group(1), m.group(2).lower(), m.group(3), part))
+                continue
+        return conds
+
+    def _parse_select(self, q, p):
+        result = {"op": "SELECT", "params": p, "filters": [], "order_by": None, "desc": False, "limit": None, "group_by": None, "raw_q": q}
+
+        m = re.match(r"SELECT\s+(.+?)\s+FROM\s+(\w+)", q, re.I)
+        if m:
+            result["columns"] = self._parse_columns(m.group(1))
+            result["table"] = m.group(2)
+
+        join_m = re.search(r"JOIN\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?\s+ON\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)", q, re.I)
+        if join_m:
+            result["join_table"] = join_m.group(1)
+            result["join_alias"] = join_m.group(2) or join_m.group(1)
+            result["join_left"] = (join_m.group(3), join_m.group(4))
+            result["join_right"] = (join_m.group(5), join_m.group(6))
+
+        where_match = re.search(r"\bWHERE\s+(.+?)\s*(?:\b(?:ORDER|GROUP|LIMIT)\b|$)", q, re.I)
+        if where_match:
+            conds = self._parse_where_clause(where_match.group(1))
+            p_idx = 0
+            for col, op, val, _raw in conds:
+                mapped_op = self._map_op(op)
+                if val == "?":
+                    result["filters"].append((mapped_op, col, p[p_idx] if p_idx < len(p) else None))
+                    p_idx += 1
+                elif val.startswith("'") and val.endswith("'"):
+                    result["filters"].append(("neq" if op in ("!=", "<>") else "eq", col, val.strip("'")))
+                elif val.startswith("("):
+                    cleaned = [v.strip().strip("'") for v in val[1:-1].split(",")]
+                    result["filters"].append((mapped_op, col, cleaned))
+                else:
+                    result["filters"].append((mapped_op, col, val))
+                    p_idx += 1
+
+        order_match = re.search(r"\bORDER\s+BY\s+(\w+)\.?(\w+)?(?:\s+(DESC|ASC))?", q, re.I)
+        if order_match:
+            result["order_by"] = order_match.group(2) or order_match.group(1)
+            result["desc"] = (order_match.group(3) or "").upper() == "DESC"
+
+        limit_match = re.search(r"\bLIMIT\s+(\d+)", q, re.I)
+        if limit_match:
+            result["limit"] = int(limit_match.group(1))
+
+        group_match = re.search(r"\bGROUP\s+BY\s+(\w+)", q, re.I)
+        if group_match:
+            result["group_by"] = group_match.group(1)
+
+        agg_match = re.search(r"(\w+)\(([^)]+)\)\s+(?:as\s+)?(\w+)", q, re.I)
+        if agg_match:
+            result["aggregate"] = (agg_match.group(1).upper(), agg_match.group(2).strip(), agg_match.group(3))
+
+        return result
+
+    def _parse_insert(self, q, p):
+        result = {"op": "INSERT", "table": None, "columns": [], "values": [], "params": p, "upsert_on_conflict": None}
+        if "OR REPLACE" in q.upper():
+            result["op"] = "UPSERT"
+
+        m = re.match(r"INSERT(?:\s+OR\s+REPLACE)?\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)", q, re.I)
+        if m:
+            result["table"] = m.group(1)
+            result["columns"] = [c.strip() for c in m.group(2).split(",")]
+            values_raw = [v.strip() for v in m.group(3).split(",")]
+            p_idx = 0
+            for val in values_raw:
+                if val == "?":
+                    result["values"].append(p[p_idx])
+                    p_idx += 1
+                elif val.startswith("'") and val.endswith("'"):
+                    result["values"].append(val[1:-1])
+                elif val.isdigit() or (val.startswith("-") and val[1:].isdigit()):
+                    result["values"].append(int(val) if val.isdigit() or (val[0] == "-" and val[1:].isdigit()) else val)
+                else:
+                    result["values"].append(val)
+
+        return result
+
+    def _parse_update(self, q, p):
+        result = {"op": "UPDATE", "table": None, "sets": {}, "filters": [], "params": p}
+        m = re.match(r"UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)", q, re.I)
+        if m:
+            result["table"] = m.group(1)
+            set_clause = m.group(2)
+            where_clause = m.group(3)
+
+            set_parts = set_clause.split(",")
+            p_idx = 0
+            for part in set_parts:
+                part = part.strip()
+                eq_match = re.match(r"(\w+)\s*=\s*(.+)", part)
+                if eq_match:
+                    col = eq_match.group(1)
+                    expr = eq_match.group(2).strip()
+                    if "?" in expr:
+                        result["sets"][col] = (expr, p[p_idx])
+                        p_idx += 1
+                    else:
+                        result["sets"][col] = (expr, None)
+
+            conds = self._parse_where_clause(where_clause)
+            for _col, _op, val, _raw in conds:
+                if val == "?":
+                    result["filters"].append((self._map_op(_op), _col, p[p_idx]))
+                    p_idx += 1
+                elif val.startswith("'") and val.endswith("'"):
+                    result["filters"].append((self._map_op(_op), _col, val.strip("'")))
+                elif val not in ("?",):
+                    result["filters"].append((self._map_op(_op), _col, val))
+                    p_idx += 1
+
+        return result
+
+    def _parse_delete(self, q, p):
+        result = {"op": "DELETE", "table": None, "filters": [], "params": p}
+        m = re.match(r"DELETE\s+FROM\s+(\w+)\s+WHERE\s+(.+)", q, re.I)
+        if m:
+            result["table"] = m.group(1)
+            conds = self._parse_where_clause(m.group(2))
+            p_idx = 0
+            for _col, _op, val, _raw in conds:
+                if val == "?":
+                    result["filters"].append((self._map_op(_op), _col, p[p_idx]))
+                    p_idx += 1
+        return result
+
+    def _parse_sql(self, q, p):
+        q_upper = q.upper()
+        if q_upper.startswith("SELECT"):
+            return self._parse_select(q, p)
+        elif q_upper.startswith("INSERT"):
+            return self._parse_insert(q, p)
+        elif q_upper.startswith("UPDATE"):
+            return self._parse_update(q, p)
+        elif q_upper.startswith("DELETE"):
+            return self._parse_delete(q, p)
+        raise ValueError(f"Unable to parse SQL: {q}")
+
+    async def _exec_parsed(self, parsed):
+        op, table = parsed["op"], parsed.get("table")
+        p = parsed.get("params", ())
+
+        filters = parsed.get("filters", [])
+        cols = parsed.get("columns", "*")
+
+        if op == "SELECT":
+            return await self._handle_select(parsed)
+        elif op == "INSERT":
+            return await self._handle_insert(parsed)
+        elif op == "UPSERT":
+            return await self._handle_upsert(parsed)
+        elif op == "UPDATE":
+            return await self._handle_update(parsed)
+        elif op == "DELETE":
+            return await self._handle_delete(parsed)
+        raise RuntimeError(f"SQL no soportado: {parsed.get('raw_q', parsed)}")
+
+    async def _handle_select(self, parsed):
+        table = parsed["table"]
+        cols = parsed["columns"]
+        filters = parsed.get("filters", [])
+        order_by = parsed.get("order_by")
+        desc = parsed.get("desc", False)
+        limit = parsed.get("limit")
+        group_by = parsed.get("group_by")
+        aggregate = parsed.get("aggregate")
+        join = parsed.get("join_table")
+
+        if join:
+            acct_col = parsed["join_right"][1] if parsed["join_right"][0] == join else parsed["join_left"][1]
+            txs = await self._select_rows(table, columns="*", filters=filters, order_by=order_by, desc=desc, limit=limit)
+            if not txs:
+                return SupabaseCursor([])
+            arows = await self._select_rows(join, columns="id,name", filters=[("in", "id", list({t[acct_col] for t in txs}))])
+            amap = {a["id"]: a["name"] for a in arows}
+            result_rows = []
+            for t in txs:
+                d = dict(t)
+                d["aname"] = amap.get(t.get(acct_col), "-")
+                result_rows.append(d)
+            return SupabaseCursor(result_rows)
+
+        if group_by:
+            rows = await self._select_rows(table, columns="*", filters=filters, order_by=order_by, desc=desc, limit=limit)
+            grouped = {}
+            for r in rows:
+                g = r.get(group_by, "")
+                grouped[g] = grouped.get(g, 0) + (r.get("amount") or 0)
+            agg_name = aggregate[2] if aggregate else "total"
+            return SupabaseCursor([{group_by: c, agg_name: t} for c, t in grouped.items()])
+
+        if aggregate:
+            func, agg_col, alias = aggregate
+            rows = await self._select_rows(table, columns=agg_col, filters=filters, order_by=order_by, desc=desc, limit=limit)
+            if func == "SUM":
+                total = sum(r[agg_col] for r in rows) if rows else None
+                return SupabaseCursor([{alias: total}])
+            elif func == "COUNT":
+                return SupabaseCursor([{alias: len(rows)}])
+
+        select_cols = "*"
+        if isinstance(cols, list) and cols != ["*"]:
+            select_cols = ",".join(cols)
+
+        rows = await self._select_rows(table, columns=select_cols, filters=filters, order_by=order_by, desc=desc, limit=limit)
+        return SupabaseCursor(rows)
+
+    async def _handle_insert(self, parsed):
+        table = parsed["table"]
+        columns = parsed["columns"]
+        values = parsed.get("values", [])
+        payload = dict(zip(columns, values))
+
+        if table == "accounts":
+            dup = await self._select_rows(table, columns="id", filters=[("eq", "user_id", payload.get("user_id")), ("eq", "name", payload.get("name"))], limit=1)
+            if dup:
+                raise DBIntegrityError("Cuenta duplicada para el usuario")
+
+        await self._insert_row(table, payload)
+        return SupabaseCursor()
+
+    async def _handle_upsert(self, parsed):
+        table = parsed["table"]
+        columns = parsed["columns"]
+        values = parsed.get("values", [])
+        payload = dict(zip(columns, values))
+
+        if table == "session_states":
+            on_conflict = "telegram_id"
+        elif table == "low_balance_alerts":
+            on_conflict = "telegram_id,account_id"
+        elif table == "roundup_config":
+            on_conflict = "user_id"
+        elif table == "budgets":
+            on_conflict = "user_id,category,month"
+        else:
+            on_conflict = "id"
+
+        await self._upsert_row(table, payload, on_conflict=on_conflict)
+        return SupabaseCursor()
+
+    async def _handle_update(self, parsed):
+        table = parsed["table"]
+        sets = parsed.get("sets", {})
+        filters = parsed.get("filters", [])
+
+        if table == "accounts":
+            for col, (expr, val) in sets.items():
+                if col == "balance" and "+" in expr:
+                    for _op, fcol, fval in filters:
+                        if fcol == "id":
+                            await self._apply_account_balance_delta(fval, val)
+                            return SupabaseCursor()
+                elif col == "balance" and "-" in expr:
+                    for _op, fcol, fval in filters:
+                        if fcol == "id":
+                            await self._apply_account_balance_delta(fval, -val)
+                            return SupabaseCursor()
+
+        if table == "savings_goals":
+            for col, (expr, val) in sets.items():
+                if col == "current_amount" and "+" in expr:
+                    uid_val = None
+                    gid_val = None
+                    for _op, fcol, fval in filters:
+                        if fcol == "id":
+                            gid_val = fval
+                        if fcol == "user_id":
+                            uid_val = fval
+                    if uid_val is not None and gid_val is not None:
+                        await self._apply_goal_amount_delta(gid_val, uid_val, val)
+                        return SupabaseCursor()
+
+        payload = {}
+        for col, (expr, val) in sets.items():
+            if "?" in expr and not expr.startswith("?"):
+                payload[col] = val if val is not None else expr
+            elif val is not None:
+                payload[col] = val
+            else:
+                payload[col] = expr
+
+        await self._update_rows(table, payload, filters)
+        return SupabaseCursor()
+
+    async def _handle_delete(self, parsed):
+        table = parsed["table"]
+        filters = parsed.get("filters", [])
+        await self._delete_rows(table, filters)
+        return SupabaseCursor()
+
     async def execute(self, sql, params=()):
         q = _norm_sql(sql)
         p = tuple(params or ())
@@ -195,249 +511,11 @@ class SupabaseDB:
         if q.startswith("ALTER TABLE "):
             return SupabaseCursor()
 
-        if q == "SELECT id FROM users WHERE telegram_id=?":
-            rows = await self._select_rows("users", columns="id", filters=[("eq", "telegram_id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "INSERT INTO users(telegram_id) VALUES(?)":
-            row = await self._insert_row("users", {"telegram_id": p[0]})
-            return SupabaseCursor(lastrowid=row.get("id"))
-
-        if q == "SELECT state,data,created_at FROM session_states WHERE telegram_id=?":
-            rows = await self._select_rows("session_states", columns="state,data,created_at", filters=[("eq", "telegram_id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "INSERT OR REPLACE INTO session_states(telegram_id,state,data,created_at) VALUES(?,?,?,?)":
-            await self._upsert_row("session_states", {"telegram_id": p[0], "state": p[1], "data": p[2], "created_at": p[3]}, on_conflict="telegram_id")
-            return SupabaseCursor()
-        if q == "DELETE FROM session_states WHERE telegram_id=?":
-            await self._delete_rows("session_states", [("eq", "telegram_id", p[0])])
-            return SupabaseCursor()
-
-        if q == "SELECT * FROM accounts WHERE user_id=? ORDER BY created_at":
-            rows = await self._select_rows("accounts", filters=[("eq", "user_id", p[0])], order_by="created_at")
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM accounts WHERE id=?":
-            rows = await self._select_rows("accounts", filters=[("eq", "id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM accounts WHERE id=? AND user_id=?":
-            rows = await self._select_rows("accounts", filters=[("eq", "id", p[0]), ("eq", "user_id", p[1])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT name FROM accounts WHERE id=?":
-            rows = await self._select_rows("accounts", columns="name", filters=[("eq", "id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT name FROM accounts WHERE id=? AND user_id=?":
-            rows = await self._select_rows("accounts", columns="name", filters=[("eq", "id", p[0]), ("eq", "user_id", p[1])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT balance FROM accounts WHERE id=?":
-            rows = await self._select_rows("accounts", columns="balance", filters=[("eq", "id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "INSERT INTO accounts(user_id,name,type,balance) VALUES(?,?,?,?)":
-            dup = await self._select_rows("accounts", columns="id", filters=[("eq", "user_id", p[0]), ("eq", "name", p[1])], limit=1)
-            if dup:
-                raise DBIntegrityError("Cuenta duplicada para el usuario")
-            await self._insert_row("accounts", {"user_id": p[0], "name": p[1], "type": p[2], "balance": p[3]})
-            return SupabaseCursor()
-        if q == "DELETE FROM accounts WHERE id=? AND user_id=?":
-            await self._delete_rows("accounts", [("eq", "id", p[0]), ("eq", "user_id", p[1])])
-            return SupabaseCursor()
-        if q == "DELETE FROM accounts WHERE user_id=?":
-            await self._delete_rows("accounts", [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-        if q == "UPDATE accounts SET balance=balance+? WHERE id=?":
-            await self._apply_account_balance_delta(p[1], p[0])
-            return SupabaseCursor()
-        if q == "UPDATE accounts SET balance=balance-? WHERE id=?":
-            await self._apply_account_balance_delta(p[1], -p[0])
-            return SupabaseCursor()
-
-        if q == "SELECT type,amount FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA'":
-            rows = await self._select_rows("transactions", columns="type,amount", filters=[("eq", "user_id", p[0]), ("gte", "date", p[1]), ("lte", "date", p[2]), ("neq", "type", "TRANSFERENCIA")])
-            return SupabaseCursor(rows)
-        if q == "SELECT category,amount FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=?":
-            rows = await self._select_rows("transactions", columns="category,amount", filters=[("eq", "user_id", p[0]), ("eq", "type", "GASTO"), ("gte", "date", p[1]), ("lte", "date", p[2])])
-            return SupabaseCursor(rows)
-        if q == "SELECT SUM(amount) as total FROM transactions WHERE user_id=? AND type='GASTO' AND category=? AND date>=? AND date<=?":
-            rows = await self._select_rows("transactions", columns="amount", filters=[("eq", "user_id", p[0]), ("eq", "type", "GASTO"), ("eq", "category", p[1]), ("gte", "date", p[2]), ("lte", "date", p[3])])
-            total = sum(r["amount"] for r in rows) if rows else None
-            return SupabaseCursor([{"total": total}])
-        if q == "SELECT category,SUM(amount) as total FROM transactions WHERE user_id=? AND type='GASTO' AND date>=? AND date<=? GROUP BY category":
-            rows = await self._select_rows("transactions", columns="category,amount", filters=[("eq", "user_id", p[0]), ("eq", "type", "GASTO"), ("gte", "date", p[1]), ("lte", "date", p[2])])
-            grouped = {}
-            for r in rows:
-                grouped[r["category"]] = grouped.get(r["category"], 0) + r["amount"]
-            return SupabaseCursor([{"category": c, "total": t} for c, t in grouped.items()])
-        if q == "SELECT * FROM transactions WHERE user_id=? AND type IN ('GASTO','INGRESO','TRANSFERENCIA') ORDER BY id DESC LIMIT 10":
-            rows = await self._select_rows("transactions", filters=[("eq", "user_id", p[0]), ("in", "type", ["GASTO", "INGRESO", "TRANSFERENCIA"])], order_by="id", desc=True, limit=10)
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA' ORDER BY date DESC":
-            rows = await self._select_rows("transactions", filters=[("eq", "user_id", p[0]), ("gte", "date", p[1]), ("lte", "date", p[2]), ("neq", "type", "TRANSFERENCIA")], order_by="date", desc=True)
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM transactions WHERE id=? AND user_id=?":
-            rows = await self._select_rows("transactions", filters=[("eq", "id", p[0]), ("eq", "user_id", p[1])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT t.*,a.name as aname FROM transactions t JOIN accounts a ON t.account_id=a.id WHERE t.user_id=? AND t.description LIKE ? ORDER BY t.date DESC LIMIT 10":
-            txs = await self._select_rows("transactions", filters=[("eq", "user_id", p[0]), ("like", "description", p[1])], order_by="date", desc=True, limit=10)
-            if not txs:
-                return SupabaseCursor([])
-            arows = await self._select_rows("accounts", columns="id,name", filters=[("in", "id", list({t["account_id"] for t in txs}))])
-            amap = {a["id"]: a["name"] for a in arows}
-            return SupabaseCursor([dict(t, aname=amap.get(t["account_id"], "—")) for t in txs])
-        if q == "SELECT t.*,a.name as aname FROM transactions t JOIN accounts a ON t.account_id=a.id WHERE t.user_id=? ORDER BY t.date DESC":
-            txs = await self._select_rows("transactions", filters=[("eq", "user_id", p[0])], order_by="date", desc=True)
-            if not txs:
-                return SupabaseCursor([])
-            arows = await self._select_rows("accounts", columns="id,name", filters=[("in", "id", list({t["account_id"] for t in txs}))])
-            amap = {a["id"]: a["name"] for a in arows}
-            return SupabaseCursor([dict(t, aname=amap.get(t["account_id"], "—")) for t in txs])
-        if q == "SELECT COUNT(*) as cnt FROM transactions WHERE account_id=?":
-            rows = await self._select_rows("transactions", columns="id", filters=[("eq", "account_id", p[0])])
-            return SupabaseCursor([{"cnt": len(rows)}])
-        if q == "DELETE FROM transactions WHERE account_id=?":
-            await self._delete_rows("transactions", [("eq", "account_id", p[0])])
-            return SupabaseCursor()
-        if q == "DELETE FROM transactions WHERE id=?":
-            await self._delete_rows("transactions", [("eq", "id", p[0])])
-            return SupabaseCursor()
-        if q == "DELETE FROM transactions WHERE user_id=?":
-            await self._delete_rows("transactions", [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category) VALUES(?,?,?,'INGRESO',?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "INGRESO", "category": p[3]})
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,description) VALUES(?,?,?,'INGRESO',?,?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "INGRESO", "category": p[3], "description": p[4]})
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,date) VALUES(?,?,?,'GASTO',?,?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "GASTO", "category": p[3], "date": p[4]})
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,date,description) VALUES(?,?,?,'GASTO',?,?,?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "GASTO", "category": p[3], "date": p[4], "description": p[5]})
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Redondeo',?,?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "TRANSFERENCIA", "category": "Redondeo", "description": p[3], "linked_account_id": p[4]})
-            return SupabaseCursor()
-        if q == "INSERT INTO transactions(user_id,account_id,amount,type,category,description,linked_account_id) VALUES(?,?,?,'TRANSFERENCIA','Transferencia',?,?)":
-            await self._insert_row("transactions", {"user_id": p[0], "account_id": p[1], "amount": p[2], "type": "TRANSFERENCIA", "category": "Transferencia", "description": p[3], "linked_account_id": p[4]})
-            return SupabaseCursor()
-
-        if q == "SELECT * FROM recurring_expenses WHERE user_id=? ORDER BY next_date":
-            rows = await self._select_rows("recurring_expenses", filters=[("eq", "user_id", p[0])], order_by="next_date")
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM recurring_expenses WHERE user_id=?":
-            rows = await self._select_rows("recurring_expenses", filters=[("eq", "user_id", p[0])])
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM recurring_expenses WHERE user_id=? AND type='INGRESO' ORDER BY next_date":
-            rows = await self._select_rows("recurring_expenses", filters=[("eq", "user_id", p[0]), ("eq", "type", "INGRESO")], order_by="next_date")
-            return SupabaseCursor(rows)
-        if q == "SELECT name FROM recurring_expenses WHERE id=? AND user_id=?":
-            rows = await self._select_rows("recurring_expenses", columns="name", filters=[("eq", "id", p[0]), ("eq", "user_id", p[1])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT COUNT(*) as cnt FROM recurring_expenses WHERE account_id=?":
-            rows = await self._select_rows("recurring_expenses", columns="id", filters=[("eq", "account_id", p[0])])
-            return SupabaseCursor([{"cnt": len(rows)}])
-        if q == "SELECT SUM(amount) as total FROM recurring_expenses WHERE user_id=? AND frequency='MENSUAL'":
-            rows = await self._select_rows("recurring_expenses", columns="amount", filters=[("eq", "user_id", p[0]), ("eq", "frequency", "MENSUAL")])
-            total = sum(r["amount"] for r in rows) if rows else None
-            return SupabaseCursor([{"total": total}])
-        if q == "DELETE FROM recurring_expenses WHERE account_id=?":
-            await self._delete_rows("recurring_expenses", [("eq", "account_id", p[0])])
-            return SupabaseCursor()
-        if q == "DELETE FROM recurring_expenses WHERE id=? AND user_id=?":
-            await self._delete_rows("recurring_expenses", [("eq", "id", p[0]), ("eq", "user_id", p[1])])
-            return SupabaseCursor()
-        if q == "DELETE FROM recurring_expenses WHERE user_id=?":
-            await self._delete_rows("recurring_expenses", [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-        if q == "INSERT INTO recurring_expenses(user_id,name,amount,frequency,next_date,category,account_id) VALUES(?,?,?,?,?,?,?)":
-            await self._insert_row("recurring_expenses", {"user_id": p[0], "name": p[1], "amount": p[2], "frequency": p[3], "next_date": p[4], "category": p[5], "account_id": p[6], "type": "GASTO"})
-            return SupabaseCursor()
-        if q == "INSERT INTO recurring_expenses(user_id,name,amount,frequency,next_date,category,account_id,type) VALUES(?,?,?,?,?,?,?,?)":
-            await self._insert_row("recurring_expenses", {"user_id": p[0], "name": p[1], "amount": p[2], "frequency": p[3], "next_date": p[4], "category": p[5], "account_id": p[6], "type": p[7]})
-            return SupabaseCursor()
-        if q == "SELECT r.*,u.telegram_id FROM recurring_expenses r JOIN users u ON r.user_id=u.id WHERE r.next_date<=?":
-            recs = await self._select_rows("recurring_expenses", filters=[("lte", "next_date", p[0])])
-            if not recs:
-                return SupabaseCursor([])
-            users = await self._select_rows("users", columns="id,telegram_id", filters=[("in", "id", list({r["user_id"] for r in recs}))])
-            umap = {u["id"]: u["telegram_id"] for u in users}
-            out = [dict(r, telegram_id=umap.get(r["user_id"])) for r in recs if r["user_id"] in umap]
-            return SupabaseCursor(out)
-
-        if q == "SELECT la.*,a.name FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.telegram_id=?":
-            alerts = await self._select_rows("low_balance_alerts", filters=[("eq", "telegram_id", p[0])])
-            if not alerts:
-                return SupabaseCursor([])
-            arows = await self._select_rows("accounts", columns="id,name", filters=[("in", "id", list({a["account_id"] for a in alerts}))])
-            amap = {a["id"]: a["name"] for a in arows}
-            return SupabaseCursor([dict(a, name=amap.get(a["account_id"], "—")) for a in alerts])
-        if q == "SELECT la.*,a.name FROM low_balance_alerts la JOIN accounts a ON la.account_id=a.id WHERE la.id=?":
-            alerts = await self._select_rows("low_balance_alerts", filters=[("eq", "id", p[0])], limit=1)
-            if not alerts:
-                return SupabaseCursor([])
-            arows = await self._select_rows("accounts", columns="id,name", filters=[("eq", "id", alerts[0]["account_id"])], limit=1)
-            name = arows[0]["name"] if arows else "—"
-            return SupabaseCursor([dict(alerts[0], name=name)])
-        if q == "INSERT OR REPLACE INTO low_balance_alerts(telegram_id,account_id,threshold,enabled) VALUES(?,?,?,1)":
-            await self._upsert_row("low_balance_alerts", {"telegram_id": p[0], "account_id": p[1], "threshold": p[2], "enabled": True}, on_conflict="telegram_id,account_id")
-            return SupabaseCursor()
-        if q == "DELETE FROM low_balance_alerts WHERE id=?":
-            await self._delete_rows("low_balance_alerts", [("eq", "id", p[0])])
-            return SupabaseCursor()
-        if q == "DELETE FROM low_balance_alerts WHERE account_id=?":
-            await self._delete_rows("low_balance_alerts", [("eq", "account_id", p[0])])
-            return SupabaseCursor()
-        if q == "DELETE FROM low_balance_alerts WHERE telegram_id=?":
-            await self._delete_rows("low_balance_alerts", [("eq", "telegram_id", p[0])])
-            return SupabaseCursor()
-
-        if q == "SELECT * FROM roundup_config WHERE user_id=?":
-            rows = await self._select_rows("roundup_config", filters=[("eq", "user_id", p[0])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "INSERT INTO roundup_config(user_id,enabled,account_id) VALUES(?,1,?)":
-            await self._upsert_row("roundup_config", {"user_id": p[0], "enabled": True, "account_id": p[1]}, on_conflict="user_id")
-            return SupabaseCursor()
-        if q == "INSERT INTO roundup_config(user_id,enabled,account_id) VALUES(?,0,?)":
-            await self._upsert_row("roundup_config", {"user_id": p[0], "enabled": False, "account_id": p[1]}, on_conflict="user_id")
-            return SupabaseCursor()
-        if q == "UPDATE roundup_config SET enabled=0 WHERE user_id=?":
-            await self._update_rows("roundup_config", {"enabled": False}, [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-        if q == "UPDATE roundup_config SET enabled=1 WHERE user_id=?":
-            await self._update_rows("roundup_config", {"enabled": True}, [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-        if q == "UPDATE roundup_config SET account_id=? WHERE user_id=?":
-            await self._update_rows("roundup_config", {"account_id": p[0]}, [("eq", "user_id", p[1])])
-            return SupabaseCursor()
-        if q == "DELETE FROM roundup_config WHERE user_id=?":
-            await self._delete_rows("roundup_config", [("eq", "user_id", p[0])])
-            return SupabaseCursor()
-
-        if q == "SELECT amount FROM budgets WHERE user_id=? AND category=? AND month=?":
-            rows = await self._select_rows("budgets", columns="amount", filters=[("eq", "user_id", p[0]), ("eq", "category", p[1]), ("eq", "month", p[2])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "SELECT category,amount FROM budgets WHERE user_id=? AND month=?":
-            rows = await self._select_rows("budgets", columns="category,amount", filters=[("eq", "user_id", p[0]), ("eq", "month", p[1])])
-            return SupabaseCursor(rows)
-        if q == "INSERT OR REPLACE INTO budgets(user_id,category,amount,month) VALUES(?,?,?,?)":
-            await self._upsert_row("budgets", {"user_id": p[0], "category": p[1], "amount": p[2], "month": p[3]}, on_conflict="user_id,category,month")
-            return SupabaseCursor()
-
-        if q == "SELECT * FROM savings_goals WHERE user_id=? ORDER BY created_at":
-            rows = await self._select_rows("savings_goals", filters=[("eq", "user_id", p[0])], order_by="created_at")
-            return SupabaseCursor(rows)
-        if q == "SELECT * FROM savings_goals WHERE user_id=?":
-            rows = await self._select_rows("savings_goals", filters=[("eq", "user_id", p[0])])
-            return SupabaseCursor(rows)
-        if q == "SELECT name FROM savings_goals WHERE id=? AND user_id=?":
-            rows = await self._select_rows("savings_goals", columns="name", filters=[("eq", "id", p[0]), ("eq", "user_id", p[1])], limit=1)
-            return SupabaseCursor(rows)
-        if q == "INSERT INTO savings_goals(user_id,name,target_amount,deadline) VALUES(?,?,?,?)":
-            await self._insert_row("savings_goals", {"user_id": p[0], "name": p[1], "target_amount": p[2], "deadline": p[3]})
-            return SupabaseCursor()
-        if q == "UPDATE savings_goals SET current_amount=current_amount+? WHERE id=? AND user_id=?":
-            await self._apply_goal_amount_delta(p[1], p[2], p[0])
-            return SupabaseCursor()
-
-        raise RuntimeError(f"SQL no soportado por backend Supabase: {q}")
+        try:
+            parsed = self._parse_sql(q, p)
+        except Exception:
+            raise RuntimeError(f"SQL no soportado por backend Supabase: {q}")
+        return await self._exec_parsed(parsed)
 
     async def commit(self):
         return None
