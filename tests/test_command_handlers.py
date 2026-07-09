@@ -146,3 +146,80 @@ class CommandHandlersTests(unittest.TestCase):
         msgs = update.effective_message.messages
         self.assertEqual(len(msgs), 1)
         self.assertIn("Transferencia", msgs[0]["text"])
+
+    def test_recurrente_no_records(self):
+        from commands import cmd_recurrente
+        db = _FakeDB()
+        db.set_select("SELECT * FROM recurring_expenses", rows=[])
+        with (
+            patch("commands.get_db", return_value=db),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.get_accounts", return_value=[]),
+            patch("commands.clear_session", AsyncMock()),
+        ):
+            update = _make_update()
+            asyncio.run(cmd_recurrente(update, None))
+        msgs = update.effective_message.messages
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("No tienes", msgs[0]["text"])
+
+    def test_alertas_shows_message(self):
+        from commands import cmd_alertas
+        db = _FakeDB()
+        db.set_select("low_balance_alerts", rows=[
+            {"name": "Caja", "balance": 50.0, "threshold": 100.0, "enabled": True},
+        ])
+        with (
+            patch("commands.get_db", return_value=db),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.clear_session", AsyncMock()),
+        ):
+            update = _make_update()
+            asyncio.run(cmd_alertas(update, None))
+        msgs = update.effective_message.messages
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("Caja", msgs[0]["text"])
+
+    def test_presupuesto_no_budgets(self):
+        from commands import cmd_presupuesto
+        db = _FakeDB()
+        db.set_select("budgets", rows=[])
+        with (
+            patch("commands.get_db", return_value=db),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.clear_session", AsyncMock()),
+        ):
+            update = _make_update()
+            asyncio.run(cmd_presupuesto(update, None))
+        msgs = update.effective_message.messages
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("No tienes", msgs[0]["text"])
+
+    def test_metas_no_goals(self):
+        from commands import cmd_metas
+        db = _FakeDB()
+        db.set_select("savings_goals", rows=[])
+        with (
+            patch("commands.get_db", return_value=db),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.clear_session", AsyncMock()),
+        ):
+            update = _make_update()
+            asyncio.run(cmd_metas(update, None))
+        msgs = update.effective_message.messages
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("No tienes", msgs[0]["text"])
+
+    def test_buscar_no_keyword(self):
+        from commands import cmd_buscar
+        update = _make_update()
+        update.message.text = "/buscar"
+        with (
+            patch("commands.get_db", return_value=_FakeDB()),
+            patch("commands.get_or_create_user", return_value=1),
+            patch("commands.clear_session", AsyncMock()),
+        ):
+            asyncio.run(cmd_buscar(update, None))
+        msgs = update.effective_message.messages
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("Uso:", msgs[0]["text"])

@@ -40,27 +40,27 @@ async def _ht_expense_amount(db,tid,uid,text,sdata,update,ctx):
     if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["expenseAmount"]=amt
     await save_session(db,tid,"waiting_expense_category",sdata)
-    await update.effective_message.reply_text(f"Gasto: €{h(f'{amt:.2f}')}\n\nSelecciona la categoria:", reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"cat",cols=2,extra=None))
+    await update.effective_message.reply_text(f"Gasto: €{h(f'{amt:.2f}')}\n\nSelecciona la categoria:", reply_markup=multi_kb(CATEGORY_KBD_ITEMS,"cat",cols=2,extra=None), parse_mode=ParseMode.HTML)
 
 async def _ht_expense_date_custom(db,tid,uid,text,sdata,update,ctx):
     try: dt=datetime.strptime(text,"%d/%m/%Y"); sdata["expenseDate"]=dt.isoformat()
     except ValueError: return await update.effective_message.reply_text("Formato invalido. Usa DD/MM/AAAA.\n\n/cancel para cancelar")
     accts=await get_accounts(db,uid); await save_session(db,tid,"waiting_expense_account",sdata)
     exp_amt_c="{:.2f}".format(sdata.get('expenseAmount',0))
-    await update.effective_message.reply_text(f"Gasto: €{h(exp_amt_c)} en {h(sdata.get('expenseCategory',''))}\n\nSelecciona la cuenta:",reply_markup=_acct_kb(accts,"exp_acc",None))
+    await update.effective_message.reply_text(f"Gasto: €{h(exp_amt_c)} en {h(sdata.get('expenseCategory',''))}\n\nSelecciona la cuenta:",reply_markup=_acct_kb(accts,"exp_acc",None), parse_mode=ParseMode.HTML)
 
 async def _ht_income_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.effective_message.reply_text("Cantidad invalida. Intenta de nuevo.", parse_mode=ParseMode.HTML)
     if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.", parse_mode=ParseMode.HTML)
     sdata["incomeAmount"]=amt; await save_session(db,tid,"waiting_income_concept",sdata)
-    await update.effective_message.reply_text(f"Ingreso: €{h(f'{amt:.2f}')}\n\n¿Cual es el concepto?\n(Ejemplo: Freelance, Regalo, Bonificacion)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Ingreso: €{h(f'{amt:.2f}')}\n\n¿Cual es el concepto?\n(Ejemplo: Freelance, Regalo, Bonificacion)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
 
 async def _ht_income_concept(db,tid,uid,text,sdata,update,ctx):
     sdata["incomeConcept"]=text; accts=await get_accounts(db,uid)
     await save_session(db,tid,"waiting_income_account",sdata)
     inc_amt="{:.2f}".format(sdata.get('incomeAmount',0))
-    await update.effective_message.reply_text(f"Ingreso: €{h(inc_amt)}\nConcepto: {h(text)}\n\nSelecciona la cuenta donde ingresa el dinero:",reply_markup=_acct_kb(accts,"inc_acc",None))
+    await update.effective_message.reply_text(f"Ingreso: €{h(inc_amt)}\nConcepto: {h(text)}\n\nSelecciona la cuenta donde ingresa el dinero:",reply_markup=_acct_kb(accts,"inc_acc",None), parse_mode=ParseMode.HTML)
 
 async def _ht_expense_note(db,tid,uid,text,sdata,update,ctx):
     if text == "/saltar":
@@ -96,19 +96,19 @@ async def _ht_transfer_amount(db,tid,uid,text,sdata,update,ctx):
 
 async def _ht_recurring_name(db,tid,uid,text,sdata,update,ctx):
     sdata["recurringName"]=text; await save_session(db,tid,"waiting_recurring_amount",sdata)
-    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
 
 async def _ht_recurring_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
     if amt is None: return await update.effective_message.reply_text("Cantidad invalida.")
     if amt <= 0: return await update.effective_message.reply_text("La cantidad debe ser positiva.")
     sdata["recurringAmount"]=amt; await save_session(db,tid,"waiting_recurring_frequency",sdata)
-    await update.effective_message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None))
+    await update.effective_message.reply_text(f"Gasto recurrente: {h(sdata.get('recurringName',''))}\nMonto: €{h(f'{amt:.2f}')}\n\nSelecciona la frecuencia:",reply_markup=multi_kb(FREQ_KBD_ITEMS,"freq",cols=2,extra=None), parse_mode=ParseMode.HTML)
 
 async def _ht_recurring_income_name(db,tid,uid,text,sdata,update,ctx):
     sdata["recurringIncomeName"] = text
     await save_session(db,tid,"waiting_recurring_income_amount",sdata)
-    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Nombre: {h(text)}\n\n¿Cual es la cantidad?\n(Formato: cantidad)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
 
 async def _ht_recurring_income_amount(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
@@ -141,7 +141,7 @@ async def _ht_budget_amount(db,tid,uid,text,sdata,update,ctx):
 
 async def _ht_goal_name(db,tid,uid,text,sdata,update,ctx):
     sdata["goalName"]=text; await save_session(db,tid,"waiting_goal_target",sdata)
-    await update.effective_message.reply_text(f"Meta: {h(text)}\n\n¿Cual es el monto objetivo?\n(Formato: cantidad)\n\n/cancel para cancelar")
+    await update.effective_message.reply_text(f"Meta: {h(text)}\n\n¿Cual es el monto objetivo?\n(Formato: cantidad)\n\n/cancel para cancelar", parse_mode=ParseMode.HTML)
 
 async def _ht_goal_target(db,tid,uid,text,sdata,update,ctx):
     amt=parse_amount(text)
@@ -224,7 +224,11 @@ async def handle_text(update,ctx):
         return await update.effective_message.reply_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
     if not s: return await update.effective_message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")
     uid=await get_or_create_user(db,tid); state=s["state"]
-    sdata=json.loads(s["data"]) if s["data"] else {}
+    try:
+        sdata=json.loads(s["data"]) if s["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        await clear_session(db,tid)
+        return await update.effective_message.reply_text("⚠️ Datos de sesion corruptos. Usa /start para reiniciar.", parse_mode=ParseMode.HTML)
     handler=_TEXT_HANDLERS.get(state)
     if handler: return await handler(db,tid,uid,text,sdata,update,ctx)
     await update.effective_message.reply_text("Usa /start para comenzar o /help para ver los comandos disponibles.")

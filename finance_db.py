@@ -75,17 +75,22 @@ class SupabaseDB:
     def __init__(self, url, key):
         self.client = create_client(url, key)
 
-    async def _run(self, fn):
-        try:
-            return await asyncio.to_thread(fn)
-        except Exception as err:
-            if _is_rls_denied(err):
-                raise RuntimeError(
-                    "Supabase rechazo la escritura por RLS (42501). "
-                    "Usa SUPABASE_KEY con la service_role key para este backend, "
-                    "o crea politicas RLS que permitan INSERT/UPDATE/DELETE."
-                ) from err
-            raise
+    async def _run(self, fn, max_retries=3):
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                return await asyncio.to_thread(fn)
+            except Exception as err:
+                last_err = err
+                if _is_rls_denied(err):
+                    raise RuntimeError(
+                        "Supabase rechazo la escritura por RLS (42501). "
+                        "Usa SUPABASE_KEY con la service_role key para este backend, "
+                        "o crea politicas RLS que permitan INSERT/UPDATE/DELETE."
+                    ) from err
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+        raise last_err
 
     async def _select_rows(self, table, columns="*", filters=None, order_by=None, desc=False, limit=None):
         def run():
