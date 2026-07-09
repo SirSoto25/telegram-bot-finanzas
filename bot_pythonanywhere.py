@@ -1,15 +1,19 @@
 """Telegram Finance Bot v2 — PythonAnywhere Edition
 Flask WSGI + python-telegram-bot + Supabase
 """
-import asyncio, logging, os
+import asyncio, json, logging, os
+from datetime import datetime, timedelta
 
 from flask import Flask, request
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import Application
 
 from finance_db import get_db as finance_get_db, init_db as finance_init_db
 from handlers_registry import register_handlers
 import finance_reports
+from finance_analytics import _build_anomalies, _build_financial_snapshot, _format_panel_text
+from finance_state import get_system_state, save_system_state
 
 from commands import (
     cmd_agregar_alerta, cmd_agregar_recurrente, cmd_agregaringresorecurrente,
@@ -120,6 +124,53 @@ async def _create_ptb_app():
             "handle_flow_callback": handle_flow_callback,
             "handle_text": handle_text,
         })
+
+        async def check_recurring_reminders(ctx):
+            db = application.bot_data["db"]
+            now = datetime.now()
+            target = now + timedelta(days=1)
+            c = await db.execute(
+                "SELECT r.*,u.telegram_id FROM recurring_expenses r JOIN users u ON r.user_id=u.id WHERE r.next_date<=?", (target.isoformat(),)
+            )
+            for rec in await c.fetchall():
+                try:
+                    await ctx.bot.send_message(
+                        chat_id=rec["telegram_id"],
+                        text=f"📅 <b>Recordatorio de pago</b>\n\n{rec['name']}: €{'%.2f' % rec['amount']} ({rec['frequency']})",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    logger.exception("No se pudo enviar recordatorio recurrente")
+
+        async def maybe_send_weekly_panel(ctx):
+            db = application.bot_data["db"]
+            now = datetime.now()
+            if now.weekday() != 0:
+                return
+            meta = await get_system_state(db)
+            meta_data = json.loads(meta["data"]) if meta and meta["data"] else {}
+            today = now.date().isoformat()
+            if meta_data.get("weekly_panel_last_sent") == today:
+                return
+            users = await db._select_rows("users", columns="telegram_id")
+            for user in users:
+                try:
+                    uid = user.get("telegram_id")
+                    if uid is None:
+                        continue
+                    snapshot = await _build_financial_snapshot(db, uid)
+                    anomalies = await _build_anomalies(db, uid)
+                    await ctx.bot.send_message(
+                        chat_id=uid, text=_format_panel_text(snapshot, anomalies), parse_mode=ParseMode.HTML
+                    )
+                except Exception:
+                    logger.exception("No se pudo enviar el panel semanal")
+            meta_data["weekly_panel_last_sent"] = today
+            await save_system_state(db, "bot_meta", meta_data)
+
+        application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
+        application.job_queue.run_repeating(maybe_send_weekly_panel, interval=3600, first=60)
+
         ptb_app = application
         return application
 

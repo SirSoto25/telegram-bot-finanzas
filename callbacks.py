@@ -43,7 +43,10 @@ async def handle_resumen_callback(update,ctx):
     db=await get_db(); tid=update.effective_user.id
     s=await get_session(db,tid)
     if not s or s["state"]!="resumen_data": return await q.edit_message_text("Sesion expirada.",parse_mode=ParseMode.HTML)
-    sdata=json.loads(s["data"])
+    try:
+        sdata=json.loads(s["data"]) if s["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        return await q.edit_message_text("⚠️ Datos de sesion corruptos.", parse_mode=ParseMode.HTML)
     d=q.data
 
     if d.startswith("resumen_cat_"):
@@ -104,7 +107,11 @@ async def handle_budget_callback(update,ctx):
     db=await get_db(); tid=update.effective_user.id; uid=await get_or_create_user(db,tid)
     s=await get_session(db,tid)
     if not s: return await q.edit_message_text("Sesion expirada.",parse_mode=ParseMode.HTML)
-    sdata=json.loads(s["data"]) if s["data"] else {}; d=q.data; state=s["state"]
+    try:
+        sdata=json.loads(s["data"]) if s["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        return await q.edit_message_text("⚠️ Datos de sesion corruptos.", parse_mode=ParseMode.HTML)
+    d=q.data; state=s["state"]
 
     if state=="waiting_budget_category" and d.startswith("budcat_"):
         key = _cb_suffix_text(d, "budcat_")
@@ -176,7 +183,11 @@ async def handle_callback(update,ctx):
         if toid is None:
             return await q.edit_message_text("❌ Opcion invalida. Usa /start para reiniciar.")
         s=await get_session(db,tid)
-        sdata=json.loads(s["data"]) if s else {}; fid=sdata.get("from_id")
+        try:
+            sdata=json.loads(s["data"]) if s else {}
+        except (json.JSONDecodeError, TypeError):
+            return await q.edit_message_text("⚠️ Datos de sesion corruptos.", parse_mode=ParseMode.HTML)
+        fid=sdata.get("from_id")
         await save_session(db,tid,"waiting_transfer_amount",{"from_id":fid,"to_id":toid})
         sa=await (await db.execute("SELECT name FROM accounts WHERE id=?",(fid,))).fetchone()
         da=await (await db.execute("SELECT name FROM accounts WHERE id=?",(toid,))).fetchone()
@@ -343,7 +354,11 @@ async def handle_flow_callback(update,ctx):
         return await q.edit_message_text("⏰ Sesion expirada. Usa /start para comenzar de nuevo.")
     s=await get_session(db,tid)
     if not s: return await q.edit_message_text("Sesion expirada. Usa /start.", parse_mode=ParseMode.HTML)
-    sdata=json.loads(s["data"]) if s["data"] else {}; d=q.data; state=s["state"]
+    try:
+        sdata=json.loads(s["data"]) if s["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        return await q.edit_message_text("⚠️ Datos de sesion corruptos.", parse_mode=ParseMode.HTML)
+    d=q.data; state=s["state"]
     entry=_FLOW_CALLBACK_MAP.get(state)
     if entry:
         prefix, handler = entry
