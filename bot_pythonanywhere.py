@@ -220,10 +220,13 @@ async def _create_ptb_app():
                 except Exception:
                     logger.exception("No se pudo enviar recordatorio de factura")
 
-        application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
-        application.job_queue.run_repeating(maybe_send_weekly_panel, interval=3600, first=60)
-        application.job_queue.run_repeating(send_daily_summaries, interval=3600, first=30)
-        application.job_queue.run_repeating(check_bill_reminders, interval=3600, first=120)
+        if application.job_queue is not None:
+            application.job_queue.run_repeating(check_recurring_reminders, interval=3600, first=10)
+            application.job_queue.run_repeating(maybe_send_weekly_panel, interval=3600, first=60)
+            application.job_queue.run_repeating(send_daily_summaries, interval=3600, first=30)
+            application.job_queue.run_repeating(check_bill_reminders, interval=3600, first=120)
+        else:
+            logger.warning("JobQueue no disponible. Instala python-telegram-bot[job-queue] para activar jobs programados.")
 
         ptb_app = application
         return application
