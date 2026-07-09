@@ -23,8 +23,8 @@ from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_notifications import _check_budget_warning, _expense_ask_account, check_alerts
 from finance_analytics import (
     _build_anomalies, _build_financial_snapshot, _format_panel_text,
-    bar_chart, get_50_30_20, get_advice, get_burn_rate, get_goal_projections,
-    get_monthly_tx, get_net_worth_history, get_phantom_expenses,
+    bar_chart, check_and_award_achievements, get_50_30_20, get_advice, get_burn_rate, get_goal_projections,
+    get_monthly_tx, get_net_worth_history, get_phantom_expenses, get_streak, update_streak,
     get_savings_rate, get_yoy_comparison, predict_expenses, savings_recs, trend_chart, unicode_table,
 )
 
@@ -578,7 +578,65 @@ async def cmd_resumendiario(update,ctx):
         status="✅ Activo" if enabled else "❌ Inactivo"
         return await update.effective_message.reply_text(
             f"📋 <b>Resumen diario</b>\n\nEstado: {status}\n\nUsa <b>/resumendiario on</b> o <b>/resumendiario off</b> para cambiar.",
-            parse_mode=ParseMode.HTML)
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_racha(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    s=await get_streak(db,uid)
+    if not s:
+        return await update.effective_message.reply_text("🔥 Aún no tienes racha. Registra ingresos y gastos para empezar a construir tu historial.", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(
+        f"🔥 <b>Racha de ahorro</b>\n\nRacha actual: <b>{s['current_streak']} meses</b>\n🏆 Mejor racha: <b>{s['best_streak']} meses</b>\n\nCada mes con saldo positivo suma 1 a tu racha.",
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_logros(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    unlocked=await db._select_rows("achievements", filters=[("eq", "user_id", uid)])
+    rows=[]
+    for a in unlocked:
+        rows.append(a["achievement_key"])
+    all_defs={
+        "first_expense":"🏁 Primer gasto registrado","first_account":"🏦 Primera cuenta creada",
+        "first_goal":"🎯 Primera meta creada","transactions_100":"📊 100 transacciones",
+        "full_month":"📅 1 mes completo trackeado","streak_3":"🔥 3 meses de racha de ahorro",
+        "big_saver":"💎 Ahorro >20% del ingreso mensual",
+    }
+    lines=[f"{'✅' if d['key'] in rows else '🔒'} {d['msg']}" for key,d in [("first_expense",{"key":"first_expense","msg":all_defs["first_expense"]}),("first_account",{"key":"first_account","msg":all_defs["first_account"]}),("first_goal",{"key":"first_goal","msg":all_defs["first_goal"]}),("transactions_100",{"key":"transactions_100","msg":all_defs["transactions_100"]}),("full_month",{"key":"full_month","msg":all_defs["full_month"]}),("streak_3",{"key":"streak_3","msg":all_defs["streak_3"]})] + [("big_saver",{"key":"big_saver","msg":all_defs["big_saver"]})]]
+    lines=[f"{'✅' if k in rows else '🔒'} {v}" for k,v in all_defs.items()]
+    await update.effective_message.reply_text(
+        f"🏆 <b>Tus logros</b> ({len(rows)}/7)\n\n" + "\n".join(lines),
+        parse_mode=ParseMode.HTML)
+
+
+async def cmd_resumen_anual(update,ctx):
+    db=await get_db(); uid=await get_or_create_user(db,update.effective_user.id)
+    text=update.effective_message.text.strip()
+    year_str=text.replace("/resumen","",1).strip()
+    try:
+        year=int(year_str) if year_str else datetime.now().year
+    except ValueError:
+        year=datetime.now().year
+    start=f"{year}-01-01"; end=f"{year}-12-31"
+    c=await db.execute("SELECT type,amount,category FROM transactions WHERE user_id=? AND date>=? AND date<=? AND type!='TRANSFERENCIA'",(uid,start,end))
+    rows=await c.fetchall()
+    if not rows:
+        return await update.effective_message.reply_text(f"No hay transacciones para {year}.", parse_mode=ParseMode.HTML)
+    income=sum(r["amount"] for r in rows if r["type"]=="INGRESO")
+    expense=sum(r["amount"] for r in rows if r["type"]=="GASTO")
+    by_cat={}
+    for r in rows:
+        if r["type"]=="GASTO":
+            by_cat[r["category"]]=by_cat.get(r["category"],0)+r["amount"]
+    top=sorted(by_cat.items(),key=lambda x:x[1],reverse=True)[:3]
+    top_lines="\n".join(f"  {i+1}. {c}: €{a:.2f}" for i,(c,a) in enumerate(top))
+    await update.effective_message.reply_text(
+        f"🎉 <b>Resumen {year}</b>\n\n"
+        f"💰 Ingresos: <b>€{income:.2f}</b>\n💸 Gastos: <b>€{expense:.2f}</b>\n"
+        f"🐷 Ahorrado: <b>€{income-expense:+.2f}</b> ({(income-expense)/income*100:.0f}%)\n\n"
+        f"📊 <b>Top categorías de gasto</b>\n{top_lines}",
+        parse_mode=ParseMode.HTML)
 
 
 async def cmd_factura(update,ctx):

@@ -450,3 +450,87 @@ async def get_phantom_expenses(db, uid):
             phantoms.append((data["desc"], data["cat"], data["count"], data["total"]))
     phantoms.sort(key=lambda x: x[3], reverse=True)
     return phantoms[:10]
+
+
+async def check_and_award_achievements(db, uid, tid=None):
+    """Check for newly unlocked achievements and return them."""
+    now = datetime.now()
+    new_achievements = []
+
+    defs = [
+        {"key": "first_expense", "msg": "🏁 Primer gasto registrado"},
+        {"key": "first_account", "msg": "🏦 Primera cuenta creada"},
+        {"key": "first_goal", "msg": "🎯 Primera meta creada"},
+        {"key": "transactions_100", "msg": "📊 100 transacciones"},
+        {"key": "full_month", "msg": "📅 1 mes completo trackeado"},
+        {"key": "streak_3", "msg": "🔥 3 meses de racha de ahorro"},
+        {"key": "big_saver", "msg": "💎 Ahorro >20% del ingreso mensual"},
+    ]
+
+    for d in defs:
+        existing = await db._select_rows("achievements", filters=[("eq", "user_id", uid), ("eq", "achievement_key", d["key"])], limit=1)
+        if existing:
+            continue
+        unlocked = False
+        if d["key"] == "first_expense":
+            rows = await db._select_rows("transactions", columns="id", filters=[("eq", "user_id", uid), ("eq", "type", "GASTO")], limit=1)
+            unlocked = bool(rows)
+        elif d["key"] == "first_account":
+            rows = await db._select_rows("accounts", columns="id", filters=[("eq", "user_id", uid)], limit=1)
+            unlocked = bool(rows)
+        elif d["key"] == "first_goal":
+            rows = await db._select_rows("savings_goals", columns="id", filters=[("eq", "user_id", uid)], limit=1)
+            unlocked = bool(rows)
+        elif d["key"] == "transactions_100":
+            rows = await db._select_rows("transactions", columns="id", filters=[("eq", "user_id", uid)])
+            unlocked = len(rows) >= 100
+        elif d["key"] == "full_month":
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end = start.replace(day=28) + __import__("datetime").timedelta(days=4)
+            rows = await db._select_rows("transactions", columns="id", filters=[("eq", "user_id", uid), ("gte", "date", start.isoformat())], limit=1)
+            unlocked = bool(rows) and now.day >= 28
+        elif d["key"] == "streak_3":
+            srows = await db._select_rows("streaks", columns="current_streak", filters=[("eq", "user_id", uid)], limit=1)
+            unlocked = bool(srows) and srows[0].get("current_streak", 0) >= 3
+
+        if unlocked:
+            await db._upsert_row("achievements", {"user_id": uid, "achievement_key": d["key"]}, on_conflict="user_id,achievement_key")
+            new_achievements.append(d)
+
+    return new_achievements
+
+
+async def get_streak(db, uid):
+    rows = await db._select_rows("streaks", filters=[("eq", "user_id", uid)], limit=1)
+    return rows[0] if rows else None
+
+
+async def update_streak(db, uid):
+    """Update streak after checking if this month had positive savings."""
+    from finance_shared import end_of_month
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end = end_of_month(now)
+
+    c = await db.execute("SELECT type,amount FROM transactions WHERE user_id=? AND date>=? AND date<=?", (uid, month_start.isoformat(), month_end.isoformat()))
+    rows = await c.fetchall()
+    income = sum(r["amount"] for r in rows if r["type"] == "INGRESO")
+    expense = sum(r["amount"] for r in rows if r["type"] == "GASTO")
+
+    current = await get_streak(db, uid)
+    cur_val = current["current_streak"] if current else 0
+    best_val = current["best_streak"] if current else 0
+
+    if income > expense:
+        cur_val += 1
+        best_val = max(best_val, cur_val)
+    else:
+        cur_val = 0
+
+    if current:
+        await db.execute("UPDATE streaks SET current_streak=?, best_streak=?, last_updated=? WHERE user_id=?", (cur_val, best_val, now.isoformat(), uid))
+    else:
+        await db.execute("INSERT OR REPLACE INTO streaks(user_id,current_streak,best_streak,last_updated) VALUES(?,?,?,?)", (uid, cur_val, best_val, now.isoformat()))
+    await db.commit()
+
+    return {"current": cur_val, "best": best_val, "income": income, "expense": expense}
