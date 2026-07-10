@@ -20,7 +20,7 @@ from finance_state import (
     get_roundup, get_session, save_session,
 )
 from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
-from finance_analytics import unicode_table
+from finance_analytics import bar_chart, get_monthly_tx, predict_expenses, savings_recs, trend_chart, unicode_table
 from commands import _finalize_quick_expense
 
 logger = logging.getLogger(__name__)
