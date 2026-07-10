@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Finance Bot (Gunicorn)
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/telegram-bot-finanzas
+EnvironmentFile=/etc/finance-bot/env
+ExecStart=/home/ubuntu/.local/bin/gunicorn --workers 2 --bind unix:/tmp/finance-bot.sock bot_pythonanywhere:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
