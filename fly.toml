@@ -1,5 +1,5 @@
 app = "telegram-bot-finanzas"
-primary_region = "mad"
+primary_region = "cdg"
 
 [build]
   dockerfile = "Dockerfile"
