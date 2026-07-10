@@ -1,9 +1,11 @@
 """Callback query handlers for the finance bot."""
 import json
+import logging
 from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
+from telegram.error import NetworkError
 
 from _env import get_db
 from finance_shared import (
@@ -20,6 +22,15 @@ from finance_state import (
 from finance_ui import _acct_kb, _confirm_kb, _kb, multi_kb
 from finance_analytics import unicode_table
 from commands import _finalize_quick_expense
+
+logger = logging.getLogger(__name__)
+
+
+async def _safe_answer_callback(q):
+    try:
+        await q.answer()
+    except NetworkError as err:
+        logger.warning("answerCallbackQuery fallo: %s", err)
 
 
 async def handle_menu_callback(update,ctx):
